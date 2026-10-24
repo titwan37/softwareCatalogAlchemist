@@ -57,7 +57,7 @@ class RepositoryCrawler:
                     file_hash = self._compute_sha256(entry)
                     
                     # Check for existing hash
-                    asset_id = self._handle_duplicate(file_hash, db_session)
+                    asset_id = self._handle_duplicate(file_hash, db_session, root_dir)
                     
                     if asset_id is not None:
                         results[str(entry.relative_to(root_dir))] = asset_id
@@ -83,7 +83,7 @@ class RepositoryCrawler:
         
         return sha256_hash.hexdigest()
 
-    def _handle_duplicate(self, file_hash: str, db_session: Session) -> Optional[int]:
+    def _handle_duplicate(self, file_hash: str, db_session: Session, root_dir: Path) -> Optional[int]:
         """
         Check if the hash already exists in the database.
         If found, returns the existing asset ID (marking it as primary if not already).
@@ -92,6 +92,7 @@ class RepositoryCrawler:
         Args:
             file_hash: The computed SHA-256 hash.
             db_session: SQLAlchemy session.
+            root_dir: The root directory used for relative path calculation.
             
         Returns:
             Asset ID if found or created, None otherwise.
@@ -127,7 +128,7 @@ class RepositoryCrawler:
 
         # Register the physical path in file_locations
         # Extract filename and parent folder chain
-        rel_path = str(Path(file_path).relative_to(root_dir)) if 'root_dir' in dir() else str(file_path.relative_to(root_dir))
+        rel_path = str(Path(file_path).relative_to(root_dir))
         filename = Path(file_path).name
         parent_chain = str(Path(file_path).parent.relative_to(root_dir))
 
