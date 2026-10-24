@@ -209,34 +209,40 @@ Output Format: JSON matching LLMClassificationResult schema."""
                 if any(keyword in product_name.upper() for keyword in ["FIREWALL", "ANTIVIRUS", "SECURITY", "NETWORK", "PROXY"]):
                     return tax["category_prefix"]
             elif tax["category_prefix"] == "07_Scientific_and_CAD":
-                if any(keyword in product_name.upper() for keyword in ["SIMULATION", "CAD", "ENGINEERING", "SCIENTIFIC", "CALCULATOR"]):
+                if any(keyword in product_name.upper() for keyword in ["SIMULATION", "CALCULATOR", "CAD", "ENGINEERING"]):
                     return tax["category_prefix"]
-
+            elif tax["category_prefix"] == "99_Unclassified_Orphan_Binaries":
+                return tax["category_prefix"]
+        
         # Default to unclassified if no match found
         return "99_Unclassified_Orphan_Binaries"
 
     def _generate_fallback_result(self, metadata: RawBinaryMetadata) -> LLMClassificationResult:
-        """Generate a result when LLM or search fails."""
-        vendor = metadata.pe_company_name or "Unknown Vendor"
-        product = metadata.pe_product_name or metadata.file_extension.upper()
+        """Generate a fallback result when LLM or search fails."""
+        primary_category = "99_Unclassified_Orphan_Binaries"
         
-        # Heuristic category assignment based on extension and folder
-        if metadata.parent_folder_chain and "Audio" in metadata.parent_folder_chain:
-            primary_category = "05_Media_and_Design"
-        elif metadata.parent_folder_chain and "Old_Tools" in metadata.parent_folder_chain:
-            primary_category = "03_System_Utilities"
-        else:
-            primary_category = "99_Unclassified_Orphan_Binaries"
+        # Infer subcategory and license from context
+        subcategory = None
+        license_model = None
+        
+        if metadata.file_extension.lower() in ['.exe', '.msi']:
+            subcategory = "Executable Binary"
+        elif metadata.file_extension.lower() == '.dll':
+            subcategory = "Dynamic Link Library"
+        
+        summary = f"Binary identified as {metadata.pe_original_filename or 'unknown'} ({metadata.file_extension})."
+        reasoning = "Classification based on internal metadata due to lack of external data."
+        confidence_score = 0.5
 
         return LLMClassificationResult(
-            canonical_vendor=vendor,
-            canonical_product=product,
+            canonical_vendor="Unknown",
+            canonical_product=metadata.pe_original_filename or "Unknown",
             detected_version=metadata.detected_version,
-            architecture=metadata.architecture,
+            architecture=ArchitectureEnum(metadata.architecture.value if metadata.architecture else "Unknown"),
             primary_category=primary_category,
-            subcategory=None,
-            license_model="Unknown",
-            summary=f"Fallback classification for {product} by {vendor}.",
-            confidence_score=0.5,
-            reasoning="Classification performed due to lack of external data or LLM availability."
+            subcategory=subcategory,
+            license_model=license_model,
+            summary=summary,
+            confidence_score=confidence_score,
+            reasoning=reasoning
         )
