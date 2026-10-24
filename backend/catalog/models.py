@@ -7,7 +7,6 @@ from sqlalchemy import (
     create_engine, Table as SqlTable, MetaData, text, Float, Boolean
 )
 from sqlalchemy.orm import declarative_base, relationship, Session
-from backend.catalog.models import SoftwareProducts
 
 Base = declarative_base()
 
