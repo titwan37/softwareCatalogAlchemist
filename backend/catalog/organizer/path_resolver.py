@@ -90,7 +90,7 @@ class TargetPathResolver:
         """Handle low confidence scores and duplicate detection."""
         action = None
         
-        # Rule 1: Low confidence check
+        # Rule 1: Low confidence check (confidence_score < 0.70)
         if asset.confidence_score is not None and asset.confidence_score < 0.70:
             return "99_Unclassified_Orphan_Binaries", f"{self._sanitize_segment(asset.pe_original_filename or product.canonical_name)}", action
         
@@ -109,7 +109,7 @@ class TargetPathResolver:
         
         count = self._collision_tracker[canonical_path]
         
-        # Generate unique filename
+        # Generate unique filename using short hash suffix
         base, ext = filename.rsplit('.', 1) if '.' in filename else (filename, "")
         suffix = f"_{count + 1}"
         new_filename = f"{base}{suffix}.{ext}" if ext else f"{base}{suffix}"
