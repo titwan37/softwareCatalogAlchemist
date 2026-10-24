@@ -1,5 +1,6 @@
 import os
 import struct
+import re
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -47,14 +48,10 @@ def extract_msi_metadata(file_path: str) -> RawBinaryMetadata:
                 metadata.file_extension = '.msi'
                 
                 # Try to parse SummaryInformation stream (SID-0x0002)
-                # This is a simplified parser for the specific structure of msi files
                 try:
                     summary_info = _parse_summary_information(file_path)
                     if summary_info:
                         metadata.digital_signature_subject = summary_info.get('Subject')
-                        # Map common properties to PE fields if available in context
-                        # Note: In a real scenario, we might cross-reference with PE headers
-                        # For this specific task, we focus on MSI-specific extraction
                 except Exception:
                     pass
                 
@@ -68,7 +65,6 @@ def extract_msi_metadata(file_path: str) -> RawBinaryMetadata:
                     
             elif extension in ['.msp', '.msi']:
                 # MSP files are patch files, structure is similar but often lacks full Product Code
-                # We attempt the same parsing logic
                 try:
                     summary_info = _parse_summary_information(file_path)
                     if summary_info:
@@ -109,11 +105,6 @@ def _parse_summary_information(file_path: str) -> Optional[Dict[str, Any]]:
         with open(file_path, 'rb') as f:
             # Read until we find the SummaryInformation stream (SID 0x0002)
             # OLE streams are stored in a directory table at offset 0x100
-            # However, for simplicity and robustness against variations, 
-            # we look for the specific signature of SummaryInformation data.
-            
-            # A common approach is to read the main stream and search for the SID header
-            # or simply parse the known structure if the file is a standard MSI.
             
             # Standard OLE Directory Table starts at 0x100
             # We'll attempt to read from there to find streams
@@ -241,94 +232,14 @@ def _read_summary_information_stream(file_path: str) -> Optional[Dict[str, Any]]
             # Decode to UTF-16 LE
             text = data.decode('utf-16-le', errors='ignore')
             
-            # Look for Subject property in SummaryInformation
-            # Format: "Subject" = "Value"
-            subject_match = re.search(r'"Subject"\s*=\s*"([^"]+)"', text)
+            # Search for Subject property in SummaryInformation stream context
+            # The stream content usually looks like: "Subject = \"...\""
+            subject_match = re.search(r'Subject\s*=\s*"([^"]+)"', text)
             
             if subject_match:
                 return {'Subject': subject_match.group(1)}
-                
+            
+            return None
+            
     except Exception:
-        pass
-    
-    return None
-
-
-# Re-implementing _parse_summary_information with the fallback logic integrated
-def _parse_summary_information_v2(file_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Updated version of _parse_summary_information.
-    """
-    try:
-        with open(file_path, 'rb') as f:
-            data = f.read()
-            
-            # Decode to UTF-16 LE
-            text = data.decode('utf-16-le', errors='ignore')
-            
-            # Look for Subject property in SummaryInformation
-            subject_match = re.search(r'"Subject"\s*=\s*"([^"]+)"', text)
-            
-            if subject_match:
-                return {'Subject': subject_match.group(1)}
-                
-    except Exception:
-        pass
-    
-    return None
-
-
-# Final integration into the main function logic
-import re
-
-def extract_msi_metadata_final(file_path: str) -> RawBinaryMetadata:
-    """
-    Main entry point for MSI metadata extraction.
-    """
-    file_path = Path(file_path)
-    extension = file_path.suffix.lower()
-    
-    metadata = RawBinaryMetadata(
-        sha256_hash="0" * 64,
-        file_size_bytes=0,
-        file_extension=extension,
-        architecture=ArchitectureEnum.Unknown,
-        pe_company_name=None,
-        pe_product_name=None,
-        pe_file_description=None,
-        pe_original_filename=None,
-        detected_version=None,
-        msi_product_code=None,
-        digital_signature_subject=None,
-        parent_folder_chain=str(file_path.parent)
-    )
-
-    try:
-        metadata.file_size_bytes = os.path.getsize(file_path)
-        
-        with open(file_path, 'rb') as f:
-            content = f.read()
-            
-            # Check for OLE signature
-            if content[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
-                metadata.file_extension = '.msi'
-                
-                # Parse SummaryInformation
-                text = content.decode('utf-16-le', errors='ignore')
-                subject_match = re.search(r'"Subject"\s*=\s*"([^"]+)"', text)
-                if subject_match:
-                    metadata.digital_signature_subject = subject_match.group(1)
-                
-                # Parse Property Table for ProductCode
-                product_code_match = re.search(r'ProductCode\s*=\s*"([^"]+)"', text)
-                if product_code_match:
-                    metadata.msi_product_code = product_code_match.group(1)
-                    
-    except Exception:
-        pass
-
-    return metadata
-
-
-# Replace the initial function with the final integrated version
-extract_msi_metadata = extract_msi_metadata_final
+        return None
