@@ -157,6 +157,8 @@ class StorageMigrationExecutor:
             result["executed"] = True
             return result
 
+        manifest_entries = []
+
         for plan in plans:
             location_id = plan.location_id
             location = db_session.query(FileLocation).get(location_id)
@@ -215,28 +217,6 @@ class StorageMigrationExecutor:
 
         # Append to rollback manifest
         try:
-            with open(self._rollback_manifest_path, 'a') as f:
-                json.dump([], f)  # Reset or append new entries based on requirement
-                # Note: Requirement says "append-only", but JSON structure suggests list. 
-                # We will clear and write the current batch to ensure consistency for this session.
-                # If strict append is needed across sessions, we would read existing first.
-                # Given the context of a single execution flow, clearing and writing the processed items is safer.
-                f.write(json.dumps([]))  # Placeholder for actual manifest entries if expanded later
-                
-            # Write actual entries to manifest
-            manifest_entries = []
-            for plan in plans:
-                location = db_session.query(FileLocation).get(plan.location_id)
-                if location and os.path.exists(dest_path):
-                    entry = {
-                        "location_id": location.id,
-                        "source_path": current_path,
-                        "dest_path": str(dest_path),
-                        "sha256": source_sha256,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    manifest_entries.append(entry)
-            
             with open(self._rollback_manifest_path, 'w') as f:
                 json.dump(manifest_entries, f, indent=4)
 
@@ -265,41 +245,55 @@ class StorageMigrationExecutor:
 
         try:
             with open(manifest_path, 'r') as f:
-                manifest_entries = json.load(f)
+                entries = json.load(f)
         except Exception as e:
             result["error"] = f"Failed to read rollback manifest: {str(e)}"
             return result
 
-        for entry in manifest_entries:
+        # Track directories created during migration for cleanup
+        created_dirs = set()
+
+        for entry in entries:
             try:
-                dest_path = Path(entry["dest_path"])
-                source_path = Path(entry["source_path"])
+                dest_path_str = entry.get("dest_path")
+                source_path_str = entry.get("source_path")
                 
-                if not os.path.exists(dest_path):
+                if not dest_path_str or not source_path_str:
                     continue
-                
-                # Restore file to original location
-                shutil.move(str(dest_path), str(source_path))
+
+                # Ensure destination directory exists (it should from execute_plan)
+                dest_dir = Path(dest_path_str).parent
+                dest_dir.mkdir(parents=True, exist_ok=True)
+
+                shutil.copy2(source_path_str, dest_path_str)
+
+                # Track created directories for cleanup
+                current_dir = Path(dest_path_str).resolve()
+                while current_dir != Path(target_root):
+                    if not current_dir.exists():
+                        break
+                    created_dirs.add(current_dir)
+                    current_dir = current_dir.parent
+
                 result["restored"] += 1
                 
             except Exception as e:
-                result["error"] = f"Failed to restore {entry['dest_path']}: {str(e)}"
-                break
+                result["error"] = f"Failed to restore file {entry.get('dest_path')}: {str(e)}"
+                db_session.rollback()
+                raise
 
         # Clean up empty directories created during migration
-        # This is a simplified cleanup; in production, track created dirs explicitly
-        try:
-            target_root = Path(manifest_path).parent
-            for dir_path in sorted(target_root.rglob("*"), reverse=True):
-                if dir_path.is_dir() and not dir_path.is_symlink():
-                    try:
-                        # Check if directory is empty (excluding .git, __pycache__, etc. if needed)
-                        if len(list(dir_path.iterdir())) == 0:
-                            dir_path.rmdir()
-                            result["cleaned_directories"].append(str(dir_path))
-                    except OSError:
-                        pass
-        except Exception as e:
-            result["error"] = f"Failed to clean up directories: {str(e)}"
+        dirs_to_remove = []
+        for dir_path in sorted(created_dirs, reverse=True):  # Remove deepest first
+            if not os.listdir(dir_path):
+                dirs_to_remove.append(dir_path)
 
+        for dir_path in dirs_to_remove:
+            try:
+                shutil.rmtree(dir_path)
+                result["cleaned_directories"].append(str(dir_path))
+            except Exception as e:
+                result["error"] = f"Failed to clean directory {dir_path}: {str(e)}"
+
+        db_session.commit()
         return result
