@@ -35,7 +35,14 @@ class SoftwareCatalogOrchestrator:
         self.path_resolver = TargetPathResolver()
         self.taxonomy_service = TaxonomyService()
 
-    def run_full_pipeline(self, source_root: str, target_root: str, db_session: Session) -> dict:
+    def run_full_pipeline(
+        self,
+        source_root: str,
+        target_root: str,
+        db_session: Session,
+        progress_callback: Optional[Any] = None,
+        stop_event: Optional[Any] = None
+    ) -> dict:
         """
         Executes the complete catalog pipeline.
         
@@ -43,6 +50,8 @@ class SoftwareCatalogOrchestrator:
             source_root: Path to the directory to scan.
             target_root: Target directory for planned migrations.
             db_session: SQLAlchemy session for database operations.
+            progress_callback: Optional callable(msg: str) for live status updates.
+            stop_event: Optional threading.Event to signal cancellation.
             
         Returns:
             Dictionary containing pipeline statistics and results.
@@ -58,19 +67,46 @@ class SoftwareCatalogOrchestrator:
             "classifications_generated": 0,
             "fts_index_updated": False,
             "migration_plans_created": 0,
-            "errors": []
+            "errors": [],
+            "cancelled": False
         }
 
         # Step 1: Seed default taxonomies
+        if progress_callback:
+            progress_callback("Seeding default taxonomies...")
         self._seed_taxonomies(db_session)
 
         # Step 2: Run RepositoryCrawler to discover binaries and register assets/locations
-        file_assets = self.crawler.scan_directory(source_root, db_session)
+        if progress_callback:
+            progress_callback(f"Discovering binaries in {source_root}...")
+        file_assets = self.crawler.scan_directory(
+            source_root,
+            db_session,
+            progress_callback=progress_callback,
+            stop_event=stop_event
+        )
         stats["files_scanned"] = len(file_assets)
         stats["assets_registered"] = len(set(file_assets.values()))
 
+        if stop_event and stop_event.is_set():
+            stats["cancelled"] = True
+            stats["success"] = False
+            if progress_callback:
+                progress_callback("Scan stopped by user.")
+            return stats
+
         # Step 3 & 4: Parse metadata and classify each unique asset
-        for rel_path, asset_id in file_assets.items():
+        total_files = len(file_assets)
+        for idx, (rel_path, asset_id) in enumerate(file_assets.items(), 1):
+            if stop_event and stop_event.is_set():
+                stats["cancelled"] = True
+                stats["success"] = False
+                if progress_callback:
+                    progress_callback("Scan stopped by user during classification.")
+                break
+
+            if progress_callback:
+                progress_callback(f"Analyzing [{idx}/{total_files}]: {Path(rel_path).name}")
             full_path = str(Path(source_root) / rel_path)
             ext = Path(rel_path).suffix.lower()
 
@@ -125,11 +161,22 @@ class SoftwareCatalogOrchestrator:
                 stats["classifications_generated"] += 1
                 self._link_product_and_taxonomy(db_session, asset, classification, enrichment_source)
 
+        if stop_event and stop_event.is_set():
+            stats["cancelled"] = True
+            stats["success"] = False
+            if progress_callback:
+                progress_callback("Scan stopped by user before migration planning.")
+            return stats
+
         # Step 5: Update FTS5 index 'catalog_fts'
+        if progress_callback:
+            progress_callback("Updating full-text search index...")
         self._update_fts_index(db_session)
         stats["fts_index_updated"] = True
 
         # Step 6: Generate and persist migration plans
+        if progress_callback:
+            progress_callback("Generating target migration paths...")
         proposals = self.path_resolver.generate_migration_plans(db_session)
         for proposal in proposals:
             existing_plan = db_session.query(MigrationPlan).filter(

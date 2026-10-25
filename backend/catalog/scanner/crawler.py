@@ -2,7 +2,7 @@ import os
 import hashlib
 import sqlite3
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -23,13 +23,21 @@ class RepositoryCrawler:
         self._seen_hashes: set[str] = set()
         self.failed_files: List[Dict[str, str]] = []  # Add this list to track bad files        
 
-    def scan_directory(self, root_path: str, db_session: Session) -> Dict[str, int]:
+    def scan_directory(
+        self,
+        root_path: str,
+        db_session: Session,
+        progress_callback: Optional[Any] = None,
+        stop_event: Optional[Any] = None
+    ) -> Dict[str, int]:
         """
         Recursively scans the directory tree starting at root_path.
         
         Args:
             root_path: The absolute path to the root directory to scan.
             db_session: SQLAlchemy session for database operations.
+            progress_callback: Optional callable(msg: str) for live status updates.
+            stop_event: Optional threading.Event to signal cancellation.
             
         Returns:
             Dictionary mapping file paths (relative to root) to their asset IDs.
@@ -45,12 +53,18 @@ class RepositoryCrawler:
 
         def _walk(current_path: Path, relative_prefix: str) -> None:
             """Recursive helper to walk the directory tree."""
+            if stop_event and stop_event.is_set():
+                return
+
             try:
                 entries = sorted(current_path.iterdir())
             except PermissionError:
                 return
 
             for entry in entries:
+                if stop_event and stop_event.is_set():
+                    return
+
                 if entry.is_dir():
                     # Construct breadcrumb chain without drive letter or root path
                     rel_part = str(entry.relative_to(root_dir))
@@ -58,7 +72,12 @@ class RepositoryCrawler:
                     
                     _walk(entry, new_breadcrumb)
                 elif entry.is_file() and entry.suffix.lower() in self.SUPPORTED_EXTENSIONS:
-                    logging.info(f"Scanning: {entry}") # Add this line to stream active files
+                    logging.info(f"Scanning: {entry}")
+                    if progress_callback:
+                        try:
+                            progress_callback(f"Scanning: {entry.name}")
+                        except Exception:
+                            pass
                     file_hash = self._compute_sha256(entry)
 
                     # If the file couldn't be read (hash is None), skip to the next file
