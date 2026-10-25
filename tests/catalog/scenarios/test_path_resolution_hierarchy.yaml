@@ -1,0 +1,200 @@
+name: "Path Resolution & Progressive Granular Taxonomy Scenarios"
+description: "Verify rational, progressive taxonomy categorization and structured path resolution using real NAS software examples mapped to the extended 10-category schema."
+
+scenarios:
+  - id: "opera_portable_autoupdate"
+    description: "Multi-level path resolution for Opera Portable sub-binary under Web/Browser hierarchy"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SoftwareTools\\Tools\\OperaPortable\\App\\Opera\\30.0.1835.88_1\\opera_autoupdate.exe"
+    raw_metadata:
+      sha256_hash: "f1a2b3c4d5e67890123456789abcdef0123456789abcdef0123456789abcdef0"
+      file_size_bytes: 2500000
+      file_extension: ".exe"
+      architecture: "x86"
+      pe_company_name: "Opera Software"
+      pe_product_name: "Opera"
+      pe_file_description: "Opera autoupdate helper"
+      pe_original_filename: "opera_autoupdate.exe"
+      detected_version: "30.0.1835.88_1"
+      parent_folder_chain: "SoftwareTools\\Tools\\OperaPortable\\App\\Opera\\30.0.1835.88_1"
+    classification:
+      canonical_vendor: "Opera"
+      canonical_product: "Opera"
+      product_suite: "OperaPortable"
+      detected_version: "30.0.1835.88_1"
+      architecture: "x86"
+      primary_category: "Internet and Communication"
+      subcategory: "Web_Browsers"
+      confidence_score: 0.95
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "09_Internet_and_Communication/Web_Browsers"
+      target_relative_path: "09_Internet_and_Communication/Web_Browsers/Opera/Opera/30.0.1835.88_1/opera_autoupdate.exe"
+      target_full_path: "\\\\SyNAS\\Software\\09_Internet_and_Communication\\Web_Browsers\\Opera\\Opera\\30.0.1835.88_1\\opera_autoupdate.exe"
+
+  - id: "opera_portable_launcher"
+    description: "Main launcher binary for OperaPortable"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SoftwareTools\\Tools\\OperaPortable\\OperaPortable.exe"
+    raw_metadata:
+      sha256_hash: "f2a2b3c4d5e67890123456789abcdef0123456789abcdef0123456789abcdef1"
+      file_size_bytes: 850000
+      file_extension: ".exe"
+      architecture: "x86"
+      pe_company_name: "Opera Software"
+      pe_product_name: "Opera Portable"
+      pe_file_description: "Opera Portable Launcher"
+      pe_original_filename: "OperaPortable.exe"
+      detected_version: "30.0.1835.88_1"
+      parent_folder_chain: "SoftwareTools\\Tools\\OperaPortable"
+    classification:
+      canonical_vendor: "Opera"
+      canonical_product: "Opera"
+      product_suite: "OperaPortable"
+      detected_version: "30.0.1835.88_1"
+      architecture: "x86"
+      primary_category: "Internet and Communication"
+      subcategory: "Web_Browsers"
+      confidence_score: 0.95
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "09_Internet_and_Communication/Web_Browsers"
+      target_relative_path: "09_Internet_and_Communication/Web_Browsers/Opera/Opera/30.0.1835.88_1/OperaPortable.exe"
+      target_full_path: "\\\\SyNAS\\Software\\09_Internet_and_Communication\\Web_Browsers\\Opera\\Opera\\30.0.1835.88_1\\OperaPortable.exe"
+
+  - id: "audio_production_audacity"
+    description: "Media & Design path resolution for Audio Production software"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SoftwareTools\\Video\\audacity-win-3.7.5-64bit.exe"
+    raw_metadata:
+      sha256_hash: "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0"
+      file_size_bytes: 15400000
+      file_extension: ".exe"
+      architecture: "x64"
+      pe_company_name: "Audacity Team"
+      pe_product_name: "Audacity"
+      pe_file_description: "Audacity Audio Editor Installer"
+      pe_original_filename: "audacity-win-3.7.5-64bit.exe"
+      detected_version: "3.7.5"
+      parent_folder_chain: "SoftwareTools\\Video"
+    classification:
+      canonical_vendor: "Audacity Team"
+      canonical_product: "Audacity"
+      product_suite: null
+      detected_version: "3.7.5"
+      architecture: "x64"
+      primary_category: "Media and Design"
+      subcategory: "Audio_Production"
+      confidence_score: 0.98
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "05_Media_and_Design/Audio_Production"
+      target_relative_path: "05_Media_and_Design/Audio_Production/Audacity_Team/Audacity/3.7.5/audacity-win-3.7.5-64bit.exe"
+      target_full_path: "\\\\SyNAS\\Software\\05_Media_and_Design\\Audio_Production\\Audacity_Team\\Audacity\\3.7.5\\audacity-win-3.7.5-64bit.exe"
+
+  - id: "security_antimalware_adwcleaner"
+    description: "Security and Network taxonomy for Anti-Malware & Cleaners"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SWInstallLibrary\\Anti-Adw\\AdwCleaner.exe"
+    raw_metadata:
+      sha256_hash: "b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef01"
+      file_size_bytes: 8500000
+      file_extension: ".exe"
+      architecture: "x86"
+      pe_company_name: "Malwarebytes"
+      pe_product_name: "AdwCleaner"
+      pe_file_description: "Malwarebytes AdwCleaner"
+      pe_original_filename: "adwcleaner.exe"
+      detected_version: "8.4.0"
+      parent_folder_chain: "SWInstallLibrary\\Anti-Adw"
+    classification:
+      canonical_vendor: "Malwarebytes"
+      canonical_product: "AdwCleaner"
+      product_suite: null
+      detected_version: "8.4.0"
+      architecture: "x86"
+      primary_category: "Security and Network"
+      subcategory: "Anti-Malware_and_Cleaners"
+      confidence_score: 0.99
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "06_Security_and_Network/Anti-Malware_and_Cleaners"
+      target_relative_path: "06_Security_and_Network/Anti-Malware_and_Cleaners/Malwarebytes/AdwCleaner/8.4.0/adwcleaner.exe"
+      target_full_path: "\\\\SyNAS\\Software\\06_Security_and_Network\\Anti-Malware_and_Cleaners\\Malwarebytes\\AdwCleaner\\8.4.0\\adwcleaner.exe"
+
+  - id: "mobile_management_odin3"
+    description: "Mobile & Devices taxonomy handling for Android flashing tools"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SWInstallLibrary\\Phone\\Android\\Tools\\Odin3_v3.10.7\\Odin3 v3.10.7.exe"
+    raw_metadata:
+      sha256_hash: "c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef012"
+      file_size_bytes: 2500000
+      file_extension: ".exe"
+      architecture: "x86"
+      pe_company_name: "Samsung Electronics"
+      pe_product_name: "Odin3"
+      pe_file_description: "Samsung Firmware Flasher"
+      pe_original_filename: "Odin3_v3.10.7.exe"
+      detected_version: "3.10.7"
+      parent_folder_chain: "SWInstallLibrary\\Phone\\Android\\Tools\\Odin3_v3.10.7"
+    classification:
+      canonical_vendor: "Samsung"
+      canonical_product: "Odin3"
+      product_suite: null
+      detected_version: "3.10.7"
+      architecture: "x86"
+      primary_category: "Mobile and Device Management"
+      subcategory: "Android_Tools"
+      confidence_score: 0.95
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "10_Mobile_and_Devices/Android_Tools"
+      target_relative_path: "10_Mobile_and_Devices/Android_Tools/Samsung/Odin3/3.10.7/Odin3_v3.10.7.exe"
+      target_full_path: "\\\\SyNAS\\Software\\10_Mobile_and_Devices\\Android_Tools\\Samsung\\Odin3\\3.10.7\\Odin3_v3.10.7.exe"
+
+  - id: "gaming_clients_steam"
+    description: "Gaming & Entertainment taxonomy handling for game launchers"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SWInstallLibrary\\Games\\SteamSetup.exe"
+    raw_metadata:
+      sha256_hash: "d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0123"
+      file_size_bytes: 2200000
+      file_extension: ".exe"
+      architecture: "x86"
+      pe_company_name: "Valve Corporation"
+      pe_product_name: "Steam Setup"
+      pe_file_description: "Steam Installer"
+      pe_original_filename: "SteamSetup.exe"
+      detected_version: "2.10.91"
+      parent_folder_chain: "SWInstallLibrary\\Games"
+    classification:
+      canonical_vendor: "Valve"
+      canonical_product: "Steam"
+      product_suite: null
+      detected_version: "2.10.91"
+      architecture: "x86"
+      primary_category: "Gaming and Entertainment"
+      subcategory: "Game_Clients"
+      confidence_score: 0.99
+    expected:
+      action_type: "MOVE"
+      progressive_taxonomy: "08_Gaming_and_Entertainment/Game_Clients"
+      target_relative_path: "08_Gaming_and_Entertainment/Game_Clients/Valve/Steam/2.10.91/SteamSetup.exe"
+      target_full_path: "\\\\SyNAS\\Software\\08_Gaming_and_Entertainment\\Game_Clients\\Valve\\Steam\\2.10.91\\SteamSetup.exe"
+
+  - id: "unclassified_orphan_with_clean_hierarchy"
+    description: "Low-confidence binary preserves meaningful subfolder hierarchy under the 99_Unclassified_Orphan_Binaries root"
+    source_root: "\\\\SyNAS\\Software"
+    current_full_path: "\\\\SyNAS\\Software\\SoftwareTools\\Tools\\Clipa.Vu.Desktop.Installer.exe"
+    raw_metadata:
+      sha256_hash: "e5f67890123456789abcdef0123456789abcdef0123456789abcdef01234"
+      file_size_bytes: 120000
+      file_extension: ".exe"
+      architecture: "x86"
+      parent_folder_chain: "SoftwareTools\\Tools"
+    classification: null
+    expected:
+      action_type: "SKIP_LOW_CONFIDENCE"
+      progressive_taxonomy: "99_Unclassified_Orphan_Binaries"
+      target_relative_path: "99_Unclassified_Orphan_Binaries/SoftwareTools_Tools/Clipa.Vu.Desktop.Installer.exe"
+      target_full_path: "\\\\SyNAS\\Software\\99_Unclassified_Orphan_Binaries\\SoftwareTools_Tools\\Clipa.Vu.Desktop.Installer.exe"

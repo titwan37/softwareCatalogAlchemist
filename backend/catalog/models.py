@@ -31,6 +31,7 @@ class SoftwareProduct(Base):
     id = Column(Integer, primary_key=True)
     canonical_vendor = Column(String(100), nullable=False)
     canonical_name = Column(String(200), nullable=False)
+    product_suite = Column(String(100), nullable=True)
     taxonomy_id = Column(Integer, ForeignKey("taxonomies.id"))
     summary_description = Column(Text, nullable=True)
     official_website = Column(String(255), nullable=True)

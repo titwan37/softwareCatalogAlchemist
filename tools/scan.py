@@ -33,4 +33,23 @@ with Session(engine) as session:
     results = orchestrator.run_full_pipeline(source_dir, target_dir, session)
     
     logging.info("Pipeline Complete!")
-    logging.info(f"Summary Stats: {results.get('stats', results)}")
+    logging.info(f"Summary Stats: {results.get('stats', {})}")
+
+    # Write error report if failures occurred
+    errors = results.get("stats", {}).get("errors", [])
+    if errors:
+        report_path = Path(target_dir) / "scan_errors_report.txt"
+        
+        # Ensure target directory exists
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("=== SOFTWARE CATALOG ALCHEMIST - ERROR REPORT ===\n\n")
+            for err in errors:
+                if isinstance(err, dict):
+                    f.write(f"FILE:  {err.get('path')}\n")
+                    f.write(f"ERROR: {err.get('error')}\n\n")
+                else:
+                    f.write(f"ERROR: {err}\n\n")
+                    
+        logging.warning(f"Found {len(errors)} corrupted or locked files. Report saved to: {report_path}")

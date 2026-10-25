@@ -21,6 +21,7 @@ class RepositoryCrawler:
 
     def __init__(self):
         self._seen_hashes: set[str] = set()
+        self.failed_files: List[Dict[str, str]] = []  # Add this list to track bad files        
 
     def scan_directory(self, root_path: str, db_session: Session) -> Dict[str, int]:
         """
@@ -59,12 +60,17 @@ class RepositoryCrawler:
                 elif entry.is_file() and entry.suffix.lower() in self.SUPPORTED_EXTENSIONS:
                     logging.info(f"Scanning: {entry}") # Add this line to stream active files
                     file_hash = self._compute_sha256(entry)
+
+                    # If the file couldn't be read (hash is None), skip to the next file
+                    if file_hash is None:
+                        continue
                     
                     # Check for existing hash
                     asset_id = self._handle_duplicate(entry, file_hash, db_session, root_dir)
                     
                     if asset_id is not None:
                         results[str(entry.relative_to(root_dir))] = asset_id
+
 
         _walk(root_dir, "")
         return results
@@ -81,11 +87,21 @@ class RepositoryCrawler:
         """
         sha256_hash = hashlib.sha256()
         
-        with open(file_path, 'rb') as f:
-            while chunk := f.read(self.CHUNK_SIZE):
-                sha256_hash.update(chunk)
-        
-        return sha256_hash.hexdigest()
+        try:
+            with open(file_path, 'rb') as f:
+                while chunk := f.read(self.CHUNK_SIZE):
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
+        except OSError as e:
+            err_msg = f"[Errno {e.errno}] {e.strerror}"
+            logging.error(f"Unreadable file skipped (Quarantined/Corrupt): {file_path} - {e}")
+            self.failed_files.append({"path": str(file_path), "error": err_msg})
+            return None
+        except Exception as e:
+            err_msg = str(e)
+            logging.error(f"Unexpected error reading {file_path}: {e}")
+            self.failed_files.append({"path": str(file_path), "error": err_msg})
+            return None
 
     def _handle_duplicate(self, file_path: Path, file_hash: str, db_session: Session, root_dir: Path) -> Optional[int]:
         """

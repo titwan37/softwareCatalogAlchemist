@@ -2,63 +2,18 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 
 from backend.catalog.models import Taxonomy
+import json
 
+from pathlib import Path
 
-DEFAULT_TAXONOMIES = [
-    {
-        "category_prefix": "01_Development_Tools",
-        "category_name": "Development Tools",
-        "subcategory_name": "IDEs_and_Editors",
-        "description": "IDEs, compilers, and build automation utilities."
-    },
-    {
-        "category_prefix": "02_Productivity_and_Office",
-        "category_name": "Productivity and Office",
-        "subcategory_name": "Word_Processing",
-        "description": "Word processors, spreadsheets, and project management software."
-    },
-    {
-        "category_prefix": "03_System_Utilities",
-        "category_name": "System Utilities",
-        "subcategory_name": "Compression",
-        "description": "Disk management, system monitoring, and maintenance tools."
-    },
-    {
-        "category_prefix": "04_Drivers_and_Hardware",
-        "category_name": "Drivers and Hardware",
-        "subcategory_name": "Drivers",
-        "description": "Device drivers and hardware configuration utilities."
-    },
-    {
-        "category_prefix": "05_Media_and_Design",
-        "category_name": "Media and Design",
-        "subcategory_name": "Photo_Editing",
-        "description": "Photo editing, video production, and graphic design suites."
-    },
-    {
-        "category_prefix": "06_Security_and_Network",
-        "category_name": "Security and Network",
-        "subcategory_name": "Network",
-        "description": "Firewalls, antivirus, and network monitoring tools."
-    },
-    {
-        "category_prefix": "07_Scientific_and_CAD",
-        "category_name": "Scientific and CAD",
-        "subcategory_name": "CAD",
-        "description": "Simulation software, scientific calculators, and computer-aided design."
-    },
-    {
-        "category_prefix": "99_Unclassified_Orphan_Binaries",
-        "category_name": "Unclassified Orphan Binaries",
-        "subcategory_name": None,
-        "description": "Software with insufficient metadata for categorization."
-    }
-]
-
+def load_taxonomies_from_file() -> list[dict[str, Any]]:
+    tax_path = Path(__file__).parent / "taxonomy.json"
+    with open(tax_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 class TaxonomyService:
     def __init__(self, db_session: Optional[Session] = None):
-        self._default_taxonomies = DEFAULT_TAXONOMIES
+        self._default_taxonomies = load_taxonomies_from_file()
         self.db_session = db_session
 
     def seed_default_taxonomies(self, db_session: Session) -> int:
@@ -109,10 +64,28 @@ class TaxonomyService:
             except Exception:
                 pass
 
-        # Check in DEFAULT_TAXONOMIES
+        # 1. Exact match on prefix / name
         for tax_data in self._default_taxonomies:
             t_cat = tax_data["category_name"].lower().replace("_", " ")
             t_pref = tax_data["category_prefix"].lower().replace("_", " ")
+            if norm_cat == t_cat or norm_cat == t_pref:
+                tax = Taxonomy(
+                    category_prefix=tax_data["category_prefix"],
+                    category_name=tax_data["category_name"],
+                    subcategory_name=subcategory_name or tax_data.get("subcategory_name"),
+                    description=tax_data.get("description")
+                )
+                if session:
+                    session.add(tax)
+                    session.commit()
+                return tax
+
+        # 2. Check substring match in DEFAULT_TAXONOMIES, but if category_name is already a clean category (e.g. "Web")
+        # and doesn't match an explicit taxonomy prefix, allow direct clean category
+        for tax_data in self._default_taxonomies:
+            t_cat = tax_data["category_name"].lower().replace("_", " ")
+            t_pref = tax_data["category_prefix"].lower().replace("_", " ")
+            t_sub = (tax_data.get("subcategory_name") or "").lower().replace("_", " ")
             if norm_cat in t_cat or t_cat in norm_cat or norm_cat in t_pref or t_pref in norm_cat:
                 tax = Taxonomy(
                     category_prefix=tax_data["category_prefix"],
@@ -125,8 +98,12 @@ class TaxonomyService:
                     session.commit()
                 return tax
 
-        # Fallback
-        prefix = "99" if ("orphan" in norm_cat or "unclassified" in norm_cat) else "00"
+        # Fallback: If category_name provided (e.g. "Web"), use it cleanly as prefix rather than "00"
+        if "orphan" in norm_cat or "unclassified" in norm_cat:
+            prefix = "99_Unclassified_Orphan_Binaries"
+        else:
+            prefix = category_name or "00_Uncategorized"
+
         fallback_tax = Taxonomy(
             category_prefix=prefix,
             category_name=category_name or "Uncategorized",

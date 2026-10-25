@@ -9,15 +9,16 @@ from backend.catalog.schemas import ActionTypeEnum, MigrationProposalContract
 class TargetPathResolver:
     """Resolves enriched binary assets to clean target paths based on taxonomy and confidence."""
     
-    def __init__(self):
+    def __init__(self, root_prefix: Optional[str] = None):
         self._collision_tracker: Dict[str, int] = {}  # Maps canonical path -> collision count
+        self.root_prefix = root_prefix
     
     def _sanitize_segment(self, segment: Optional[str]) -> str:
         """Sanitize a single path segment by removing illegal characters and normalizing spaces."""
         if not segment:
             return ""
         
-        # Replace spaces and slashes with underscores
+        # Replace spaces with underscores
         sanitized = segment.replace(" ", "_")
         illegal_chars = [':', '*', '?', '"', '<', '>', '|', '/', '\\']
         for char in illegal_chars:
@@ -26,6 +27,15 @@ class TargetPathResolver:
         # Collapse repeated underscores and strip ends
         sanitized = re.sub(r'_+', '_', sanitized).strip("_")
         return sanitized
+    
+    def _sanitize_folder_chain(self, chain: Optional[str]) -> str:
+        """Sanitize a multi-level folder chain while preserving its progressive directory depth."""
+        if not chain:
+            return ""
+        # Normalize separators
+        normalized = chain.replace("\\", "/").strip("/")
+        segments = [self._sanitize_segment(s) for s in normalized.split("/") if s]
+        return "/".join([s for s in segments if s])
     
     def _generate_clean_filename(self, original_name: Optional[str]) -> str:
         """Generate a clean filename with extension preserved."""
@@ -64,6 +74,22 @@ class TargetPathResolver:
             new_path = new_filename
             
         return new_path, new_filename
+
+    def resolve_full_path(self, root_prefix: Optional[str], relative_path: str) -> str:
+        """Combine a root prefix (UNC or local path) with relative path respecting OS conventions."""
+        root = root_prefix or self.root_prefix or ""
+        if not root:
+            return relative_path
+
+        # If root uses backslashes (like \\Synas or C:\), return formatted with backslashes
+        if "\\" in root or root.startswith("//"):
+            clean_root = root.rstrip("\\/")
+            clean_rel = relative_path.replace("/", "\\").lstrip("\\")
+            return f"{clean_root}\\{clean_rel}"
+        else:
+            clean_root = root.rstrip("/")
+            clean_rel = relative_path.replace("\\", "/").lstrip("/")
+            return f"{clean_root}/{clean_rel}"
     
     def process_asset(
         self,
@@ -72,7 +98,7 @@ class TargetPathResolver:
         taxonomy: Optional[Taxonomy] = None,
         location: Optional[FileLocation] = None
     ) -> Tuple[str, str, ActionTypeEnum]:
-        """Process a single asset to determine target path and action."""
+        """Process a single asset to determine progressive target path and action."""
         confidence = product.confidence_score if product and product.confidence_score is not None else 0.5
         is_primary = location.is_primary_copy if location and location.is_primary_copy is not None else True
         
@@ -85,27 +111,43 @@ class TargetPathResolver:
 
         # Rule: Duplicate check
         if not is_primary:
-            parent_chain = self._sanitize_segment(location.parent_folder_chain) if location and location.parent_folder_chain else "duplicates"
-            target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}"
+            parent_chain = self._sanitize_folder_chain(location.parent_folder_chain) if location and location.parent_folder_chain else "duplicates"
+            target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}" if parent_chain else f"99_Unclassified_Orphan_Binaries/{clean_filename}"
             return target_path, clean_filename, ActionTypeEnum.DELETE_DUPLICATE
 
         # Rule: Low confidence check (< 0.70)
         if confidence < 0.70 or product is None or taxonomy is None:
-            parent_chain = self._sanitize_segment(location.parent_folder_chain) if location and location.parent_folder_chain else "orphans"
-            target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}"
+            # Flatten parent folder chain with underscores for orphan folder names (e.g. SoftwareTools_Tools)
+            parent_chain = self._sanitize_segment(location.parent_folder_chain) if location and location.parent_folder_chain else ""
+            if parent_chain:
+                target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}"
+            else:
+                target_path = f"99_Unclassified_Orphan_Binaries/{clean_filename}"
             return target_path, clean_filename, ActionTypeEnum.SKIP_LOW_CONFIDENCE
 
-        # Rule: Main catalog taxonomy path
-        cat_prefix = self._sanitize_segment(taxonomy.category_prefix) if taxonomy.category_prefix else "00"
-        cat_name = self._sanitize_segment(taxonomy.category_name) if taxonomy.category_name else "misc"
-        subcat_name = self._sanitize_segment(taxonomy.subcategory_name) if taxonomy.subcategory_name else ""
-        
+        # Rule: Progressive & Rational Taxonomy Hierarchy
+        cat_prefix = taxonomy.category_prefix or ""
+        cat_name = taxonomy.category_name or ""
+        subcat_name = taxonomy.subcategory_name or ""
+
+        # Progressive category path:
+        # If prefix already contains the category name or starts with category code (e.g. "08_Gaming_and_Entertainment")
+        # use cat_prefix directly
+        if cat_prefix:
+            category_segment = self._sanitize_segment(cat_prefix)
+        else:
+            category_segment = self._sanitize_segment(cat_name) or "misc"
+
+        category_parts = [category_segment]
+        if subcat_name:
+            category_parts.append(self._sanitize_segment(subcat_name))
+        category_hierarchy = "/".join(category_parts)
+
         clean_vendor = self._sanitize_segment(product.canonical_vendor) or "Unknown_Vendor"
         clean_name = self._sanitize_segment(product.canonical_name) or "Unknown_Product"
         clean_version = self._sanitize_segment(asset.detected_version) if asset and asset.detected_version else "1.0.0"
 
-        subcat_part = f"/{subcat_name}" if subcat_name else ""
-        canonical_path = f"{cat_prefix}_{cat_name}{subcat_part}/{clean_vendor}/{clean_name}/{clean_version}/{clean_filename}"
+        canonical_path = f"{category_hierarchy}/{clean_vendor}/{clean_name}/{clean_version}/{clean_filename}"
         
         resolved_path, final_filename = self._resolve_collision(canonical_path, clean_filename)
         return resolved_path, final_filename, ActionTypeEnum.MOVE

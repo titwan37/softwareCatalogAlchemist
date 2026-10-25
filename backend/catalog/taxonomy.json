@@ -1,0 +1,110 @@
+[
+    {
+        "category_prefix": "01_Development_Tools",
+        "category_name": "Development Tools",
+        "subcategory_name": "IDEs_and_Editors",
+        "description": "IDEs, compilers, and text editors (e.g., Android Studio, Visual Studio, Notepad++)."
+    },
+    {
+        "category_prefix": "01_Development_Tools",
+        "category_name": "Development Tools",
+        "subcategory_name": "Frameworks_and_SDKs",
+        "description": "Language runtimes and SDKs (e.g., Java, .NET Core, Python, MinGW)."
+    },
+    {
+        "category_prefix": "02_Productivity_and_Office",
+        "category_name": "Productivity and Office",
+        "subcategory_name": "Word_Processing",
+        "description": "Word processors, spreadsheets, and office suites (e.g., LibreOffice, MS Office)."
+    },
+    {
+        "category_prefix": "02_Productivity_and_Office",
+        "category_name": "Productivity and Office",
+        "subcategory_name": "PDF_Tools",
+        "description": "PDF viewers and creators (e.g., SumatraPDF, PDFCreator, Acrobat)."
+    },
+    {
+        "category_prefix": "03_System_Utilities",
+        "category_name": "System Utilities",
+        "subcategory_name": "Backup_and_Recovery",
+        "description": "Data recovery, partitioning, and backup tools (e.g., R-Studio, Recoverit, Savepart)."
+    },
+    {
+        "category_prefix": "03_System_Utilities",
+        "category_name": "System Utilities",
+        "subcategory_name": "OS_and_Boot_Media",
+        "description": "ISO creators and bootable USB makers (e.g., Rufus, LinuxLive USB, IsoCreator)."
+    },
+    {
+        "category_prefix": "04_Drivers_and_Hardware",
+        "category_name": "Drivers and Hardware",
+        "subcategory_name": "Drivers_and_Peripherals",
+        "description": "Device drivers for GPUs, printers, scanners, and peripherals (e.g., Logitech, NVMe, Xerox)."
+    },
+    {
+        "category_prefix": "05_Media_and_Design",
+        "category_name": "Media and Design",
+        "subcategory_name": "Photo_Editing",
+        "description": "Image manipulation and graphic design suites (e.g., GIMP, Krita, Inkscape)."
+    },
+    {
+        "category_prefix": "05_Media_and_Design",
+        "category_name": "Media and Design",
+        "subcategory_name": "Video_Production",
+        "description": "Video editing and processing tools (e.g., Premiere, VirtualDub, Kdenlive)."
+    },
+    {
+        "category_prefix": "05_Media_and_Design",
+        "category_name": "Media and Design",
+        "subcategory_name": "Audio_Production",
+        "description": "Audio recording and editing software (e.g., Audacity, FL Studio, WavePad)."
+    },
+    {
+        "category_prefix": "06_Security_and_Network",
+        "category_name": "Security and Network",
+        "subcategory_name": "Anti-Malware_and_Cleaners",
+        "description": "Antivirus, ad-cleaners, and system cleaners (e.g., AdwCleaner, Malwarebytes, CCleaner)."
+    },
+    {
+        "category_prefix": "06_Security_and_Network",
+        "category_name": "Security and Network",
+        "subcategory_name": "Network",
+        "description": "Network analysis, VPNs, and remote desktop tools (e.g., Wireshark, AnyDesk, IPScan)."
+    },
+    {
+        "category_prefix": "07_Scientific_and_Data",
+        "category_name": "Scientific and Data Analysis",
+        "subcategory_name": "Data_Analysis",
+        "description": "Data science, analytics, and statistical tools (e.g., Anaconda3, RStudio, KNIME)."
+    },
+    {
+        "category_prefix": "08_Gaming_and_Entertainment",
+        "category_name": "Gaming and Entertainment",
+        "subcategory_name": "Game_Clients",
+        "description": "Game launchers and modding platforms (e.g., Steam, Epic, Origin, WeMod)."
+    },
+    {
+        "category_prefix": "09_Internet_and_Communication",
+        "category_name": "Internet and Communication",
+        "subcategory_name": "Web_Browsers",
+        "description": "Web browsers and browser tools (e.g., Chrome, Brave, Opera, Vivaldi)."
+    },
+    {
+        "category_prefix": "09_Internet_and_Communication",
+        "category_name": "Internet and Communication",
+        "subcategory_name": "Communication",
+        "description": "Chat, voice, and video conferencing apps (e.g., Discord, Skype, WhatsApp, Zoom)."
+    },
+    {
+        "category_prefix": "10_Mobile_and_Devices",
+        "category_name": "Mobile and Device Management",
+        "subcategory_name": "Android_Tools",
+        "description": "Mobile flashing, rooting, and device management (e.g., Odin3, ADB, Samsung DeX)."
+    },
+    {
+        "category_prefix": "99_Unclassified_Orphan_Binaries",
+        "category_name": "Unclassified Orphan Binaries",
+        "subcategory_name": null,
+        "description": "Software with insufficient metadata for categorization."
+    }
+]

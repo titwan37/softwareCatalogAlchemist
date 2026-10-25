@@ -55,6 +55,7 @@ class RawBinaryMetadata(BaseModel):
 class LLMClassificationResult(BaseModel):
     canonical_vendor: str
     canonical_product: str
+    product_suite: Optional[str] = None
     detected_version: Optional[str] = None
     architecture: ArchitectureEnum
     primary_category: str

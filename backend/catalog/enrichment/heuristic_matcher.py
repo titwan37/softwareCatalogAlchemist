@@ -13,29 +13,50 @@ from backend.catalog.schemas import RawBinaryMetadata, LLMClassificationResult, 
 
 # Tier 1: Built-in dictionary of common installer signatures
 TIER_1_SIGNATURES = {
+    "opera_browser": {
+        "patterns": ["Opera", "Opera Portable", "OperaPortable", "Opera Software"],
+        "vendor": "Opera",
+        "product": "Opera",
+        "product_suite": "OperaPortable",
+        "category": "Internet and Communication",
+        "subcategory": "Web_Browsers",
+        "license_model": "Freeware"
+    },
     "microsoft_office": {
         "patterns": ["Microsoft Office", "Office Professional Plus"],
         "vendor": "Microsoft",
         "product": "Office",
+        "product_suite": None,
         "category": "Productivity and Office",
-        "subcategory": "Word Processing",
+        "subcategory": "Word_Processing",
         "license_model": "Commercial"
     },
     "adobe_photshop": {
         "patterns": ["Adobe Photoshop"],
         "vendor": "Adobe",
         "product": "Photoshop",
+        "product_suite": None,
         "category": "Media and Design",
-        "subcategory": "Photo Editing",
+        "subcategory": "Photo_Editing",
         "license_model": "Commercial"
     },
     "visual_studio": {
-        "patterns": ["Visual Studio"],
+        "patterns": ["Visual Studio", "Visual Studio Code", "CodeSetup"],
         "vendor": "Microsoft",
-        "product": "Visual Studio",
+        "product": "Visual Studio Code",
+        "product_suite": None,
         "category": "Development Tools",
-        "subcategory": "IDE",
+        "subcategory": "IDEs_and_Editors",
         "license_model": "Commercial"
+    },
+    "seven_zip": {
+        "patterns": ["7-Zip", "7z"],
+        "vendor": "7-Zip",
+        "product": "7-Zip",
+        "product_suite": None,
+        "category": "System Utilities",
+        "subcategory": "Backup_and_Recovery",
+        "license_model": "Open Source"
     }
 }
 
@@ -158,6 +179,7 @@ class HeuristicMatcher:
         return LLMClassificationResult(
             canonical_vendor=sig_data["vendor"],
             canonical_product=sig_data["product"],
+            product_suite=sig_data.get("product_suite"),
             detected_version=metadata.detected_version,
             architecture=metadata.architecture,
             primary_category=sig_data["category"],

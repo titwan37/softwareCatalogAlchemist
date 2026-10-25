@@ -194,6 +194,7 @@ class SoftwareCatalogOrchestrator:
             product = SoftwareProduct(
                 canonical_vendor=classification.canonical_vendor,
                 canonical_name=classification.canonical_product,
+                product_suite=getattr(classification, "product_suite", None),
                 taxonomy_id=tax.id if tax else None,
                 summary_description=classification.summary,
                 license_model=classification.license_model,
@@ -202,6 +203,9 @@ class SoftwareCatalogOrchestrator:
                 is_human_verified=False
             )
             db_session.add(product)
+            db_session.flush()
+        elif getattr(classification, "product_suite", None) and not product.product_suite:
+            product.product_suite = classification.product_suite
             db_session.flush()
 
         asset.product_id = product.id
