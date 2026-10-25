@@ -1,6 +1,6 @@
 import sqlite3
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, JSON, ForeignKey, 
@@ -9,6 +9,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship, Session
 
 Base = declarative_base()
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Taxonomy(Base):
@@ -34,7 +38,7 @@ class SoftwareProduct(Base):
     enrichment_source = Column(String(100), nullable=True)
     confidence_score = Column(Float, nullable=True)
     is_human_verified = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     taxonomy = relationship("Taxonomy", back_populates="software_products")
 
@@ -56,7 +60,7 @@ class BinaryAsset(Base):
     msi_product_code = Column(String(100), nullable=True)
     digital_signature_subject = Column(String(255), nullable=True)
     raw_metadata_json = Column(JSON, nullable=True)
-    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    first_seen_at = Column(DateTime, default=utc_now)
 
     product = relationship("SoftwareProduct", back_populates="binary_assets")
 
@@ -69,7 +73,7 @@ class FileLocation(Base):
     current_full_path = Column(String(500), nullable=False)
     current_filename = Column(String(255), nullable=False)
     parent_folder_chain = Column(Text, nullable=True)
-    file_modified_at = Column(DateTime, default=datetime.utcnow)
+    file_modified_at = Column(DateTime, default=utc_now)
     is_primary_copy = Column(Boolean, default=True)
 
     asset = relationship("BinaryAsset", back_populates="file_locations")
@@ -98,42 +102,23 @@ FileLocation.migration_plans = relationship("MigrationPlan", back_populates="loc
 
 def init_catalog_db(engine):
     """Initialize the catalog database with WAL mode and FTS5 schema."""
+    Base.metadata.create_all(engine)
     
-    # Ensure engine is configured for WAL if not already
     if engine.dialect.name == "sqlite":
-        # Reconnect to apply settings or use existing connection
-        conn = engine.connect()
-        
-        try:
-            # Enable WAL Mode
+        with engine.connect() as conn:
             with conn.begin():
                 conn.execute(text("PRAGMA journal_mode=WAL"))
-                conn.commit()
-            
-            # Create Tables
-            Base.metadata.create_all(engine)
-            
-            # Initialize FTS5 Virtual Table for full-text search on software_products
-            # Fields: canonical_vendor, canonical_name, summary_description, official_website, license_model, enrichment_source
-            with conn.begin():
                 conn.execute(text("""
-                    CREATE VIRTUAL TABLE catalog_fts USING fts5(
+                    CREATE VIRTUAL TABLE IF NOT EXISTS catalog_fts USING fts5(
                         canonical_vendor, 
                         canonical_name, 
                         summary_description, 
-                        official_website, 
-                        license_model, 
-                        enrichment_source,
+                        pe_original_filename,
                         content='software_products',
-                        content_rowid='rowid'
+                        content_rowid='id'
                     )
                 """))
-                conn.commit()
-            
-            # Create Index on FTS5 table for performance
-            with conn.begin():
-                conn.execute(text("CREATE INDEX idx_catalog_fts ON catalog_fts(rowid)"))
-                conn.commit()
-                
-        finally:
-            conn.close()
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_assets_hash ON binary_assets(sha256_hash)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_assets_product ON binary_assets(product_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_locations_asset ON file_locations(asset_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_migration_status ON migration_plans(status)"))

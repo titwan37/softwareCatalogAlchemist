@@ -1,41 +1,37 @@
 import re
 import hashlib
-import sqlite3
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 from sqlalchemy.orm import Session
 from backend.catalog.models import BinaryAsset, SoftwareProduct, FileLocation, Taxonomy
 from backend.catalog.schemas import ActionTypeEnum, MigrationProposalContract
+
 
 class TargetPathResolver:
     """Resolves enriched binary assets to clean target paths based on taxonomy and confidence."""
     
     def __init__(self):
-        self._collision_tracker: dict[str, int] = {}  # Maps canonical path -> collision count
+        self._collision_tracker: Dict[str, int] = {}  # Maps canonical path -> collision count
     
-    def _sanitize_segment(self, segment: str) -> str:
+    def _sanitize_segment(self, segment: Optional[str]) -> str:
         """Sanitize a single path segment by removing illegal characters and normalizing spaces."""
         if not segment:
             return ""
         
-        # Replace spaces with underscores
+        # Replace spaces and slashes with underscores
         sanitized = segment.replace(" ", "_")
-        
-        # Remove or replace illegal OS characters (except underscore)
         illegal_chars = [':', '*', '?', '"', '<', '>', '|', '/', '\\']
         for char in illegal_chars:
             sanitized = sanitized.replace(char, "_")
         
-        # Strip leading/trailing whitespace and underscores
-        sanitized = sanitized.strip("_")
-        
+        # Collapse repeated underscores and strip ends
+        sanitized = re.sub(r'_+', '_', sanitized).strip("_")
         return sanitized
     
-    def _generate_clean_filename(self, original_name: str) -> str:
-        """Generate a clean filename from the original name."""
+    def _generate_clean_filename(self, original_name: Optional[str]) -> str:
+        """Generate a clean filename with extension preserved."""
         if not original_name:
-            return "unknown"
+            return "unknown.bin"
         
-        # Extract base name without extension for collision handling logic
         parts = original_name.rsplit('.', 1)
         if len(parts) == 2:
             base, ext = parts
@@ -43,124 +39,101 @@ class TargetPathResolver:
             base = original_name
             ext = ""
         
-        clean_base = self._sanitize_segment(base)
-        clean_ext = self._sanitize_segment(ext)
+        clean_base = self._sanitize_segment(base) or "file"
+        clean_ext = self._sanitize_segment(ext).lower()
         
-        return f"{clean_base}{clean_ext}" if clean_ext else clean_base
-    
-    def _resolve_path_segments(self, taxonomy: Taxonomy, vendor: str, name: str, version: str, filename: str) -> Tuple[str, str]:
-        """Resolve the category and subcategory segments."""
-        # Sanitize taxonomy parts
-        cat_prefix = self._sanitize_segment(taxonomy.category_prefix) if taxonomy.category_prefix else "misc"
-        cat_name = self._sanitize_segment(taxonomy.category_name) if taxonomy.category_name else "uncategorized"
-        subcat_name = self._sanitize_segment(taxonomy.subcategory_name) if taxonomy.subcategory_name else ""
-        
-        # Build path segments
-        segments = [cat_prefix, cat_name]
-        if subcat_name:
-            segments.append(subcat_name)
-        
-        # Sanitize vendor and name parts
-        clean_vendor = self._sanitize_segment(vendor)
-        clean_name = self._sanitize_segment(name)
-        clean_version = self._sanitize_segment(version) if version else "unknown"
-        clean_filename = self._generate_clean_filename(filename)
-        
-        return "/".join(segments), f"{clean_vendor}/{clean_name}/{clean_version}/{clean_filename}"
-    
-    def _resolve_target_path(self, asset: BinaryAsset, product: SoftwareProduct, taxonomy: Taxonomy) -> Tuple[str, str]:
-        """Resolve the full target path for an asset."""
-        # Determine category prefix and name from taxonomy
-        cat_prefix = taxonomy.category_prefix if taxonomy.category_prefix else "misc"
-        cat_name = taxonomy.category_name if taxonomy.category_name else "uncategorized"
-        
-        # Resolve vendor/name/version parts
-        clean_vendor = self._sanitize_segment(product.canonical_vendor)
-        clean_name = self._sanitize_segment(product.canonical_name)
-        clean_version = self._sanitize_segment(asset.detected_version) if asset.detected_version else "unknown"
-        clean_filename = self._generate_clean_filename(asset.pe_original_filename or product.canonical_name)
-        
-        # Construct the full path string
-        category_path = f"{cat_prefix}_{cat_name}"
-        vendor_name_path = f"{clean_vendor}/{clean_name}/{clean_version}/{clean_filename}"
-        
-        return f"{category_path}/{vendor_name_path}", clean_filename
-    
-    def _handle_confidence_and_dups(self, asset: BinaryAsset, product: SoftwareProduct, taxonomy: Taxonomy) -> Tuple[str, str, Optional[ActionTypeEnum]]:
-        """Handle low confidence scores and duplicate detection."""
-        action = None
-        
-        # Rule 1: Low confidence check (confidence_score < 0.70)
-        if asset.confidence_score is not None and asset.confidence_score < 0.70:
-            return "99_Unclassified_Orphan_Binaries", f"{self._sanitize_segment(asset.pe_original_filename or product.canonical_name)}", action
-        
-        # Rule 2: Duplicate check (is_primary_copy == 0)
-        if asset.is_primary_copy is not None and not asset.is_primary_copy:
-            return "99_Unclassified_Orphan_Binaries", f"{self._sanitize_segment(asset.pe_original_filename or product.canonical_name)}", action
-        
-        # Default action for valid assets
-        return "main_catalog", f"{self._sanitize_segment(asset.pe_original_filename or product.canonical_name)}", None
+        return f"{clean_base}.{clean_ext}" if clean_ext else clean_base
     
     def _resolve_collision(self, canonical_path: str, filename: str) -> Tuple[str, str]:
-        """Resolve filename collisions by appending a hash suffix."""
-        # Check if this path already exists in our tracker
+        """Resolve filename collisions by appending an index suffix."""
         if canonical_path not in self._collision_tracker:
             self._collision_tracker[canonical_path] = 0
-        
-        count = self._collision_tracker[canonical_path]
-        
-        # Generate unique filename using short hash suffix
-        base, ext = filename.rsplit('.', 1) if '.' in filename else (filename, "")
-        suffix = f"_{count + 1}"
-        new_filename = f"{base}{suffix}.{ext}" if ext else f"{base}{suffix}"
+            return canonical_path, filename
         
         self._collision_tracker[canonical_path] += 1
+        count = self._collision_tracker[canonical_path]
         
-        return canonical_path, new_filename
+        base, ext = filename.rsplit('.', 1) if '.' in filename else (filename, "")
+        suffix = f"_{count}"
+        new_filename = f"{base}{suffix}.{ext}" if ext else f"{base}{suffix}"
+        
+        if '/' in canonical_path:
+            parent_path, _ = canonical_path.rsplit('/', 1)
+            new_path = f"{parent_path}/{new_filename}"
+        else:
+            new_path = new_filename
+            
+        return new_path, new_filename
     
-    def process_asset(self, asset: BinaryAsset, product: SoftwareProduct, taxonomy: Taxonomy) -> Tuple[str, str, Optional[ActionTypeEnum]]:
+    def process_asset(
+        self,
+        asset: BinaryAsset,
+        product: Optional[SoftwareProduct] = None,
+        taxonomy: Optional[Taxonomy] = None,
+        location: Optional[FileLocation] = None
+    ) -> Tuple[str, str, ActionTypeEnum]:
         """Process a single asset to determine target path and action."""
-        # Step 1: Resolve base path segments
-        category_path, vendor_name_path = self._resolve_target_path(asset, product, taxonomy)
+        confidence = product.confidence_score if product and product.confidence_score is not None else 0.5
+        is_primary = location.is_primary_copy if location and location.is_primary_copy is not None else True
         
-        # Step 2: Handle confidence and duplicates
-        low_conf_path, clean_filename, default_action = self._handle_confidence_and_dups(asset, product, taxonomy)
+        filename = (
+            (asset.pe_original_filename if asset and asset.pe_original_filename else None)
+            or (location.current_filename if location else None)
+            or (product.canonical_name if product else "binary.exe")
+        )
+        clean_filename = self._generate_clean_filename(filename)
+
+        # Rule: Duplicate check
+        if not is_primary:
+            parent_chain = self._sanitize_segment(location.parent_folder_chain) if location and location.parent_folder_chain else "duplicates"
+            target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}"
+            return target_path, clean_filename, ActionTypeEnum.DELETE_DUPLICATE
+
+        # Rule: Low confidence check (< 0.70)
+        if confidence < 0.70 or product is None or taxonomy is None:
+            parent_chain = self._sanitize_segment(location.parent_folder_chain) if location and location.parent_folder_chain else "orphans"
+            target_path = f"99_Unclassified_Orphan_Binaries/{parent_chain}/{clean_filename}"
+            return target_path, clean_filename, ActionTypeEnum.SKIP_LOW_CONFIDENCE
+
+        # Rule: Main catalog taxonomy path
+        cat_prefix = self._sanitize_segment(taxonomy.category_prefix) if taxonomy.category_prefix else "00"
+        cat_name = self._sanitize_segment(taxonomy.category_name) if taxonomy.category_name else "misc"
+        subcat_name = self._sanitize_segment(taxonomy.subcategory_name) if taxonomy.subcategory_name else ""
         
-        # If low confidence or duplicate, return early with specific path
-        if default_action:
-            return low_conf_path, clean_filename, default_action
+        clean_vendor = self._sanitize_segment(product.canonical_vendor) or "Unknown_Vendor"
+        clean_name = self._sanitize_segment(product.canonical_name) or "Unknown_Product"
+        clean_version = self._sanitize_segment(asset.detected_version) if asset and asset.detected_version else "1.0.0"
+
+        subcat_part = f"/{subcat_name}" if subcat_name else ""
+        canonical_path = f"{cat_prefix}_{cat_name}{subcat_part}/{clean_vendor}/{clean_name}/{clean_version}/{clean_filename}"
         
-        # Step 3: Resolve collision for main catalog
-        canonical_path = f"{category_path}/{vendor_name_path}"
         resolved_path, final_filename = self._resolve_collision(canonical_path, clean_filename)
-        
-        return resolved_path, final_filename, None
+        return resolved_path, final_filename, ActionTypeEnum.MOVE
     
     def generate_migration_plans(self, db_session: Session) -> List[MigrationProposalContract]:
-        """Generate migration plans for all assets in the database."""
+        """Generate migration plans for all file locations in the database."""
         proposals = []
+        locations = db_session.query(FileLocation).all()
         
-        # Query all assets with their related products and taxonomies
-        query = db_session.query(BinaryAsset).join(SoftwareProduct).join(Taxonomy)
-        results = query.all()
-        
-        for asset, product, taxonomy in results:
-            target_path, clean_filename, action_enum = self.process_asset(asset, product, taxonomy)
+        for loc in locations:
+            asset = loc.asset or db_session.get(BinaryAsset, loc.asset_id)
+            product = asset.product if asset and asset.product else (
+                db_session.get(SoftwareProduct, asset.product_id) if asset and asset.product_id else None
+            )
+            taxonomy = product.taxonomy if product and product.taxonomy else (
+                db_session.get(Taxonomy, product.taxonomy_id) if product and product.taxonomy_id else None
+            )
+            confidence = product.confidence_score if product and product.confidence_score is not None else 0.5
             
-            # Determine action type string
-            if action_enum is None:
-                action_type_str = "MOVE"  # Default to MOVE for valid assets
-            else:
-                action_type_str = action_enum.value
+            target_path, clean_filename, action_enum = self.process_asset(asset, product, taxonomy, loc)
             
             proposal = MigrationProposalContract(
-                location_id=asset.id,
-                current_full_path=f"/assets/{asset.id}",  # Placeholder for actual path logic if needed
+                location_id=loc.id,
+                current_full_path=loc.current_full_path,
                 proposed_relative_path=target_path,
-                action_type=action_type_str,
-                confidence_score=asset.confidence_score or 0.5
+                action_type=action_enum,
+                confidence_score=confidence
             )
-            
             proposals.append(proposal)
         
         return proposals

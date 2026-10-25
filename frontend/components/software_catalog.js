@@ -12,34 +12,93 @@ const SoftwareCatalog = () => {
   const [treeDiff, setTreeDiff] = useState({ before: [], after: [] });
   const [isDryRun, setIsDryRun] = useState(true);
 
-  // Simulated scan progress and stats
-  useEffect(() => {
-    let interval;
-    if (sourcePath && !scanProgress) {
-      interval = setInterval(() => {
-        setScanProgress((prev) => {
-          if (prev >= 100) return 100;
-          return prev + Math.floor(Math.random() * 15);
-        });
-      }, 200);
+  // Fetch catalog from backend API
+  const fetchCatalogItems = async (query = '') => {
+    try {
+      const url = query 
+        ? `/api/v1/catalog/items?query=${encodeURIComponent(query)}` 
+        : '/api/v1/catalog/items';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch items');
+      const data = await res.json();
+      const rawItems = Array.isArray(data) ? data : (data.items || []);
+      
+      const mapped = rawItems.map(item => ({
+        id: item.id,
+        name: item.canonical_name || 'Unknown',
+        vendor: item.canonical_vendor || 'Unknown',
+        category: item.primary_category || (item.taxonomy ? item.taxonomy.split('/')[0] : 'Uncategorized'),
+        architecture: item.architecture || 'Unknown',
+        version: item.detected_version || '-',
+        confidence: item.confidence_score !== null && item.confidence_score !== undefined ? item.confidence_score : 0,
+        isHumanVerified: item.is_human_verified
+      }));
+      setCatalogItems(mapped);
+    } catch (err) {
+      console.error('Error fetching catalog:', err);
     }
-    return () => clearInterval(interval);
-  }, [sourcePath, scanProgress]);
+  };
 
-  const handleScan = () => {
+  // Fetch preview/diff
+  const fetchTreeDiff = async () => {
+    try {
+      const res = await fetch('/api/v1/catalog/migration/preview');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.preview) {
+          const before = (data.preview.source_files || []).map(p => ({ path: p }));
+          const after = (data.preview.target_files || []).map(p => ({ path: p }));
+          setTreeDiff({ before, after });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching tree diff:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCatalogItems();
+    fetchTreeDiff();
+  }, []);
+
+  const handleScan = async () => {
     if (!sourcePath) return;
-    setScanProgress(0);
+    setScanProgress(10);
     setScanStats(null);
-    
-    // Simulate API call delay
-    setTimeout(() => {
+
+    const progressTimer = setInterval(() => {
+      setScanProgress(prev => (prev < 90 ? prev + 10 : prev));
+    }, 300);
+
+    try {
+      const res = await fetch('/api/v1/catalog/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_directory: sourcePath })
+      });
+      clearInterval(progressTimer);
+      setScanProgress(100);
+
+      if (!res.ok) {
+        throw new Error(`Scan failed with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const stats = data.stats || {};
       setScanStats({
-        totalBinaries: Math.floor(Math.random() * 500) + 100,
-        uniqueHashes: Math.floor(Math.random() * 300) + 50,
-        duplicateSpaceWasted: (Math.random() * 2.5).toFixed(2) + ' GB',
+        totalBinaries: stats.total_files_scanned || 0,
+        uniqueHashes: stats.total_assets_registered || 0,
+        duplicateSpaceWasted: stats.total_duplicates_detected ? `${stats.total_duplicates_detected} duplicates` : '0 GB',
         status: 'success'
       });
-    }, 1500);
+
+      await fetchCatalogItems();
+      await fetchTreeDiff();
+    } catch (err) {
+      clearInterval(progressTimer);
+      setScanProgress(0);
+      alert(`Scan failed: ${err.message}`);
+    }
   };
 
   const filteredItems = useMemo(() => {
@@ -51,19 +110,45 @@ const SoftwareCatalog = () => {
     });
   }, [catalogItems, searchQuery, selectedCategory]);
 
-  const handleReorganize = () => {
-    if (!isDryRun) {
-      alert('Executing reorganization... (Simulation Mode: ' + isDryRun + ')');
-    } else {
-      console.log('Dry-run simulation started for:', treeDiff.after.length, 'items');
+  const handleReorganize = async () => {
+    try {
+      const res = await fetch('/api/v1/catalog/migration/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Reorganization executed successfully! Files processed: ${data.stats?.files_processed ?? 0}`);
+        fetchCatalogItems();
+        fetchTreeDiff();
+      } else {
+        const errData = await res.json();
+        alert(`Reorganization failed: ${errData.detail || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Reorganization error: ${err.message}`);
     }
   };
 
-  const handleRollback = () => {
-    if (!isDryRun) {
-      alert('Rolling back changes...');
-    } else {
-      console.log('Rollback simulation started');
+  const handleRollback = async () => {
+    try {
+      const res = await fetch('/api/v1/catalog/migration/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Rollback completed successfully! Restored: ${data.stats?.restored ?? 0}`);
+        fetchCatalogItems();
+        fetchTreeDiff();
+      } else {
+        const errData = await res.json();
+        alert(`Rollback failed: ${errData.detail || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Rollback error: ${err.message}`);
     }
   };
 

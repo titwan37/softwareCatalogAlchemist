@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Catalog Alchemist</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans p-8 min-h-screen">
+    <div class="max-w-7xl mx-auto space-y-8">
+        
+        <header>
+            <h1 class="text-3xl font-bold text-slate-900">Software Catalog Alchemist</h1>
+            <p class="text-slate-600">Automated classification and reorganization engine</p>
+        </header>
+
+        <!-- 1. Scan Control Bar -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
+                <i data-lucide="folder-search" class="text-blue-600"></i> Scan Control
+            </h2>
+            <div class="flex items-center space-x-4">
+                <input type="text" id="sourcePath" value="C:\Messy_Archive" 
+                       class="flex-1 border-slate-300 rounded-md p-2 border focus:ring-2 focus:ring-blue-500 outline-none" 
+                       placeholder="Target Directory Path...">
+                <button id="scanBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md flex items-center space-x-2 transition-colors">
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                    <span id="scanBtnText">Run Full Scan</span>
+                </button>
+            </div>
+            
+            <!-- Scan Stats (Hidden by default) -->
+            <div id="statsContainer" class="hidden grid grid-cols-4 gap-4 mt-6">
+                <div class="bg-slate-50 p-4 rounded border border-slate-200">
+                    <div class="text-sm text-slate-500">Files Scanned</div>
+                    <div id="statFiles" class="text-2xl font-bold">0</div>
+                </div>
+                <div class="bg-slate-50 p-4 rounded border border-slate-200">
+                    <div class="text-sm text-slate-500">Unique Assets</div>
+                    <div id="statAssets" class="text-2xl font-bold">0</div>
+                </div>
+                <div class="bg-green-50 p-4 rounded border border-green-200">
+                    <div class="text-sm text-green-700">Classifications</div>
+                    <div id="statClassified" class="text-2xl font-bold text-green-800">0</div>
+                </div>
+                <div class="bg-blue-50 p-4 rounded border border-blue-200">
+                    <div class="text-sm text-blue-700">Migration Plans</div>
+                    <div id="statPlans" class="text-2xl font-bold text-blue-800">0</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Catalog Explorer -->
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex items-center space-x-2 bg-slate-50">
+                <i data-lucide="search" class="text-slate-400 w-5 h-5"></i>
+                <input type="text" id="searchInput" placeholder="Search FTS5 Catalog (Vendor, Name, Category)..." 
+                       class="w-full bg-transparent border-none focus:ring-0 outline-none text-slate-700">
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
+                        <tr>
+                            <th class="p-4 font-medium">Confidence</th>
+                            <th class="p-4 font-medium">Vendor / Product</th>
+                            <th class="p-4 font-medium">Category</th>
+                            <th class="p-4 font-medium">Version</th>
+                            <th class="p-4 font-medium">Architecture</th>
+                        </tr>
+                    </thead>
+                    <tbody id="catalogTableBody" class="divide-y divide-slate-100">
+                        <tr><td colspan="5" class="p-8 text-center text-slate-500">No items loaded. Run a scan or type to search.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 3. Migration Actions -->
+        <section class="flex space-x-4 justify-end">
+            <button id="rollbackBtn" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-md flex items-center space-x-2">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                <span>Rollback Migration</span>
+            </button>
+            <button id="executeBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center space-x-2 shadow-sm">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span>Execute Reorganization</span>
+            </button>
+        </section>
+
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // DOM Elements
+        const scanBtn = document.getElementById('scanBtn');
+        const scanBtnText = document.getElementById('scanBtnText');
+        const sourcePath = document.getElementById('sourcePath');
+        const statsContainer = document.getElementById('statsContainer');
+        const searchInput = document.getElementById('searchInput');
+        const catalogTableBody = document.getElementById('catalogTableBody');
+        const executeBtn = document.getElementById('executeBtn');
+        const rollbackBtn = document.getElementById('rollbackBtn');
+
+        // 1. Scan Execution
+        scanBtn.addEventListener('click', async () => {
+            if (!sourcePath.value) return;
+            scanBtn.disabled = true;
+            scanBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            scanBtnText.innerText = 'Scanning...';
+
+            try {
+                const res = await fetch('/api/v1/catalog/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_directory: sourcePath.value })
+                });
+                const data = await res.json();
+                
+                // Update Stats
+                document.getElementById('statFiles').innerText = data.stats.total_files_scanned || 0;
+                document.getElementById('statAssets').innerText = data.stats.total_assets_registered || 0;
+                document.getElementById('statClassified').innerText = data.stats.total_classifications || 0;
+                document.getElementById('statPlans').innerText = data.stats.migration_plans_generated || 0;
+                statsContainer.classList.remove('hidden');
+
+                fetchCatalog();
+            } catch (err) {
+                console.error('Scan Error:', err);
+                alert('Scan failed to execute.');
+            } finally {
+                scanBtn.disabled = false;
+                scanBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                scanBtnText.innerText = 'Run Full Scan';
+            }
+        });
+
+        // 2. Catalog Rendering
+        const fetchCatalog = async (query = '') => {
+            try {
+                const res = await fetch(`/api/v1/catalog/items?query=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                const items = Array.isArray(data) ? data : (data.items || []);
+                
+                catalogTableBody.innerHTML = '';
+                if (items.length === 0) {
+                    catalogTableBody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">No items found.</td></tr>`;
+                    return;
+                }
+
+                items.forEach(item => {
+                    const isHigh = item.confidence_score >= 0.7;
+                    const confHtml = isHigh 
+                        ? `<span class="flex items-center text-green-600"><i data-lucide="check-circle" class="w-4 h-4 mr-1"></i> High</span>`
+                        : `<span class="flex items-center text-amber-500"><i data-lucide="alert-triangle" class="w-4 h-4 mr-1"></i> Low</span>`;
+
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-50";
+                    tr.innerHTML = `
+                        <td class="p-4">${confHtml}</td>
+                        <td class="p-4 font-medium text-slate-900">${item.canonical_vendor || 'Unknown'} / ${item.canonical_name || 'Unknown'}</td>
+                        <td class="p-4 text-slate-600">${item.primary_category || 'Uncategorized'}</td>
+                        <td class="p-4 text-slate-600">${item.detected_version || '-'}</td>
+                        <td class="p-4 text-slate-600">${item.architecture || 'Unknown'}</td>
+                    `;
+                    catalogTableBody.appendChild(tr);
+                });
+                lucide.createIcons(); // Re-initialize icons for dynamic content
+            } catch (err) {
+                console.error('Catalog Fetch Error:', err);
+            }
+        };
+
+        // Real-time FTS5 search
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchCatalog(e.target.value), 300);
+        });
+
+        // 3. Migration Actions
+        executeBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/v1/catalog/migration/execute', { method: 'POST' });
+                if (res.ok) alert('Migration executed successfully!');
+            } catch (err) {
+                alert('Migration failed.');
+            }
+        });
+
+        rollbackBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/v1/catalog/migration/rollback', { method: 'POST' });
+                if (res.ok) alert('Rollback completed successfully!');
+            } catch (err) {
+                alert('Rollback failed.');
+            }
+        });
+
+        // Initial Load
+        fetchCatalog();
+    </script>
+</body>
+</html>

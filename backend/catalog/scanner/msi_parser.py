@@ -1,6 +1,7 @@
 import os
 import struct
 import re
+import hashlib
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -21,7 +22,7 @@ def extract_msi_metadata(file_path: str) -> RawBinaryMetadata:
     
     # Initialize metadata object with defaults
     metadata = RawBinaryMetadata(
-        sha256_hash="0" * 64,  # Placeholder for actual hash calculation if needed
+        sha256_hash="0" * 64,
         file_size_bytes=0,
         file_extension=extension,
         architecture=ArchitectureEnum.Unknown,
@@ -38,10 +39,10 @@ def extract_msi_metadata(file_path: str) -> RawBinaryMetadata:
     # Basic file inspection
     try:
         metadata.file_size_bytes = os.path.getsize(file_path)
-        
-        # Attempt to read the first few bytes to detect OLE signature (0xD0 0xCF 0x11 0xE0 0xA1 0xB1 0x1A 0xE1)
         with open(file_path, 'rb') as f:
-            header = f.read(8)
+            content = f.read()
+            metadata.sha256_hash = hashlib.sha256(content).hexdigest()
+            header = content[:8]
             
             # Check for OLE Compound Document signature
             if header == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':

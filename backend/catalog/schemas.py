@@ -44,8 +44,11 @@ class RawBinaryMetadata(BaseModel):
 
     @field_validator('file_extension')
     def validate_extension(cls, v):
-        if not v.endswith('.'):
-            return v + '.'
+        if not v:
+            return v
+        v = v.lower()
+        if not v.startswith('.'):
+            return '.' + v
         return v
 
 
@@ -75,8 +78,19 @@ class MigrationProposalContract(BaseModel):
     action_type: ActionTypeEnum
     confidence_score: float
 
-    @field_validator('current_full_path', 'proposed_relative_path')
-    def validate_path_characters(cls, v):
+    @field_validator('current_full_path')
+    def validate_current_full_path(cls, v):
+        check_val = v
+        if re.match(r'^[a-zA-Z]:[\\/]', check_val):
+            check_val = check_val[2:]
+        illegal_chars = [':', '*', '?', '"', '<', '>', '|']
+        for char in illegal_chars:
+            if char in check_val:
+                raise ValueError(f"Path contains illegal character: {char}")
+        return v
+
+    @field_validator('proposed_relative_path')
+    def validate_proposed_relative_path(cls, v):
         illegal_chars = [':', '*', '?', '"', '<', '>', '|']
         for char in illegal_chars:
             if char in v:

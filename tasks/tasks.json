@@ -1,0 +1,657 @@
+[
+  {
+    "task_id": "CAT-001",
+    "title": "Software Catalog SQLAlchemy ORM Models & FTS5 Schema",
+    "description": "Implement the SQLAlchemy ORM models and SQLite WAL + FTS5 schema initialization in 'backend/catalog/models.py'. Define tables: 'taxonomies' (id, category_prefix, category_name, subcategory_name, description), 'software_products' (id, canonical_vendor, canonical_name, taxonomy_id, summary_description, official_website, license_model, enrichment_source, confidence_score, is_human_verified, created_at), 'binary_assets' (id, product_id, sha256_hash, file_size_bytes, file_extension, detected_version, architecture, pe_company_name, pe_product_name, pe_file_description, pe_original_filename, msi_product_code, digital_signature_subject, raw_metadata_json, first_seen_at), 'file_locations' (id, asset_id, current_full_path, current_filename, parent_folder_chain, file_modified_at, is_primary_copy), and 'migration_plans' (id, location_id, proposed_relative_path, action_type, status, error_message, executed_at). Include an 'init_catalog_db(engine)' function that enables PRAGMA journal_mode=WAL, creates all tables, and initializes the 'catalog_fts' FTS5 virtual table.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/__init__.py",
+      "backend/catalog/models.py"
+    ],
+    "context_paths": [],
+    "verification_command": "python -c \"import backend.catalog.models as m; assert all(hasattr(m, attr) for attr in ['Taxonomy', 'SoftwareProduct', 'BinaryAsset', 'FileLocation', 'MigrationPlan', 'init_catalog_db']); print('CAT-001 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:36:56.827851",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-001",
+    "test_command": "python -c \"import backend.catalog.models as m; assert all(hasattr(m, attr) for attr in ['Taxonomy', 'SoftwareProduct', 'BinaryAsset', 'FileLocation', 'MigrationPlan', 'init_catalog_db']); print('CAT-001 passed')\"",
+    "context_files": [],
+    "dependencies": []
+  },
+  {
+    "task_id": "CAT-002",
+    "title": "Pydantic Taxonomy & Binary Metadata Contracts",
+    "description": "Create Pydantic v2 data contracts in 'backend/catalog/schemas.py'. Implement: 'ArchitectureEnum' ('x86', 'x64', 'ARM64', 'Universal', 'Unknown'), 'ActionTypeEnum' ('MOVE', 'COPY', 'DELETE_DUPLICATE', 'SKIP_LOW_CONFIDENCE'), 'MigrationStatusEnum' ('PENDING', 'APPROVED', 'EXECUTED', 'FAILED', 'ROLLED_BACK'), 'RawBinaryMetadata' (sha256_hash, file_size_bytes, file_extension, architecture, pe_company_name, pe_product_name, pe_file_description, pe_original_filename, detected_version, msi_product_code, digital_signature_subject, parent_folder_chain), 'LLMClassificationResult' (canonical_vendor, canonical_product, detected_version, architecture, primary_category, subcategory, license_model, summary, confidence_score, reasoning), and 'MigrationProposalContract' (location_id, current_full_path, proposed_relative_path, action_type, confidence_score). Include validators ensuring paths contain no illegal characters (':', '*', '?', '\"', '<', '>', '|').",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/schemas.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.schemas import RawBinaryMetadata, LLMClassificationResult, MigrationProposalContract; print('CAT-002 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-001"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:37:07.498235",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-002",
+    "test_command": "python -c \"from backend.catalog.schemas import RawBinaryMetadata, LLMClassificationResult, MigrationProposalContract; print('CAT-002 passed')\"",
+    "context_files": [
+      "backend/catalog/models.py"
+    ],
+    "dependencies": [
+      "CAT-001"
+    ]
+  },
+  {
+    "task_id": "CAT-003",
+    "title": "Default Software Taxonomy Seeder & Hierarchy Manager",
+    "description": "Implement 'backend/catalog/taxonomy_service.py' defining the canonical software category tree (01_Development_Tools, 02_Productivity_and_Office, 03_System_Utilities, 04_Drivers_and_Hardware, 05_Media_and_Design, 06_Security_and_Network, 07_Scientific_and_CAD, 99_Unclassified_Orphan_Binaries) and their respective subcategories. Provide class 'TaxonomyService' with methods 'seed_default_taxonomies(db_session)', 'resolve_taxonomy(category_name, subcategory_name) -> Taxonomy', and 'get_taxonomy_tree() -> List[dict]'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/taxonomy_service.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.taxonomy_service import TaxonomyService, DEFAULT_TAXONOMIES; assert len(DEFAULT_TAXONOMIES) >= 8; print('CAT-003 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-001",
+      "CAT-002"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:37:24.883086",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-003",
+    "test_command": "python -c \"from backend.catalog.taxonomy_service import TaxonomyService, DEFAULT_TAXONOMIES; assert len(DEFAULT_TAXONOMIES) >= 8; print('CAT-003 passed')\"",
+    "context_files": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-001",
+      "CAT-002"
+    ]
+  },
+  {
+    "task_id": "CAT-004",
+    "title": "Recursive Asynchronous Crawler & Chunked SHA-256 Deduplicator",
+    "description": "Implement 'backend/catalog/scanner/crawler.py'. Create class 'RepositoryCrawler' that recursively walks a target root directory scanning for '.exe', '.msi', and '.msp' files. For each discovered binary: (1) Extract the relative parent folder chain as context breadcrumbs (ignoring drive letters and root path); (2) Compute the SHA-256 hash using 1MB chunked memory-efficient buffered reads; (3) Query 'binary_assets' in SQLite to detect if the hash already exists; (4) Register the physical path in 'file_locations' and mark 'is_primary_copy=1' for the first occurrence (or shortest path) and '0' for redundant duplicates. Provide method 'scan_directory(root_path: str, db_session) -> dict'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/scanner/__init__.py",
+      "backend/catalog/scanner/crawler.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.scanner.crawler import RepositoryCrawler; c = RepositoryCrawler(); print('CAT-004 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-001",
+      "CAT-002"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:37:44.809614",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-004",
+    "test_command": "python -c \"from backend.catalog.scanner.crawler import RepositoryCrawler; c = RepositoryCrawler(); print('CAT-004 passed')\"",
+    "context_files": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-001",
+      "CAT-002"
+    ]
+  },
+  {
+    "task_id": "CAT-005",
+    "title": "Zero-Execution Windows PE (.exe) Static Header & Version Parser",
+    "description": "Implement 'backend/catalog/scanner/pe_parser.py' for static, zero-execution analysis of Windows Portable Executable ('.exe') files. Use 'pefile' (with graceful fallback to pure-Python binary header & UTF-16LE VS_VERSION_INFO regex extraction if pefile is absent or header is malformed). Extract: Machine architecture (IMAGE_FILE_MACHINE_AMD64 -> 'x64', I386 -> 'x86', ARM64 -> 'ARM64'), StringFileInfo entries ('CompanyName', 'ProductName', 'FileDescription', 'FileVersion', 'ProductVersion', 'OriginalFilename', 'InternalName', 'LegalCopyright'), and Authenticode certificate subject strings if present. Return a populated 'RawBinaryMetadata' instance via 'extract_pe_metadata(file_path: str) -> RawBinaryMetadata'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/scanner/pe_parser.py"
+    ],
+    "context_paths": [
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.scanner.pe_parser import extract_pe_metadata; print('CAT-005 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-002"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:38:28.530206",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-005",
+    "test_command": "python -c \"from backend.catalog.scanner.pe_parser import extract_pe_metadata; print('CAT-005 passed')\"",
+    "context_files": [
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-002"
+    ]
+  },
+  {
+    "task_id": "CAT-006",
+    "title": "Zero-Execution Windows Installer (.msi) OLE Property Parser",
+    "description": "Implement 'backend/catalog/scanner/msi_parser.py' to statically extract metadata from '.msi' and '.msp' files without executing msiexec. Use 'olefile' or native Windows COM/Installer API / binary stream parsing to read the OLE Compound Document SummaryInformation stream and Property table strings. Extract: 'Manufacturer', 'ProductName', 'ProductVersion', 'ProductCode' (GUID), 'TargetPlatform' ('x64'/'x86'), and 'Subject'. Provide function 'extract_msi_metadata(file_path: str) -> RawBinaryMetadata'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/scanner/msi_parser.py"
+    ],
+    "context_paths": [
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.scanner.msi_parser import extract_msi_metadata; print('CAT-006 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-002"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:39:01.174082",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-006",
+    "test_command": "python -c \"from backend.catalog.scanner.msi_parser import extract_msi_metadata; print('CAT-006 passed')\"",
+    "context_files": [
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-002"
+    ]
+  },
+  {
+    "task_id": "CAT-001-FIX",
+    "title": "Hotfix: Remove Circular Self-Import in Catalog Models",
+    "description": "Repair 'backend/catalog/models.py' by removing the invalid circular self-import line 'from backend.catalog.models import SoftwareProducts'. Ensure 'SoftwareProduct' (singular), 'Taxonomy', 'BinaryAsset', 'FileLocation', 'MigrationPlan', and 'init_catalog_db' are cleanly defined and importable via 'backend.catalog'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/__init__.py",
+      "backend/catalog/models.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py"
+    ],
+    "verification_command": "python -c \"import backend.catalog; from backend.catalog.models import SoftwareProduct; print('CAT-001-FIX passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-001"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:39:23.526967",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-001-FIX",
+    "test_command": "python -c \"import backend.catalog; from backend.catalog.models import SoftwareProduct; print('CAT-001-FIX passed')\"",
+    "context_files": [
+      "backend/catalog/models.py"
+    ],
+    "dependencies": [
+      "CAT-001"
+    ]
+  },
+  {
+    "task_id": "CAT-007",
+    "title": "Tier 1 & Tier 2 Heuristic & Winget Manifest Lookup Adapter",
+    "description": "Implement 'backend/catalog/enrichment/heuristic_matcher.py'. Before invoking web search or LLMs, resolve recognizable software deterministically: (1) Tier 1 checks local SQLite 'software_products' cache and a built-in dictionary of common installer signatures; (2) Tier 2 queries the public Winget API. Return 'Optional[LLMClassificationResult]' with 'confidence_score >= 0.90' when matched. Provide class 'HeuristicMatcher' with method 'match(metadata: RawBinaryMetadata) -> Optional[LLMClassificationResult]'. CRITICAL: The SQLAlchemy model imported from 'backend.catalog.models' MUST be named 'SoftwareProduct' (singular).",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "local_executor_only",
+    "allowed_paths": [
+      "backend/catalog/enrichment/__init__.py",
+      "backend/catalog/enrichment/heuristic_matcher.py"
+    ],
+    "context_paths": [
+      "backend/catalog/schemas.py",
+      "backend/catalog/taxonomy_service.py",
+      "backend/catalog/models.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.enrichment.heuristic_matcher import HeuristicMatcher; m = HeuristicMatcher(); print('CAT-007 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-002",
+      "CAT-003"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:39:51.874917",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-007",
+    "test_command": "python -c \"from backend.catalog.enrichment.heuristic_matcher import HeuristicMatcher; m = HeuristicMatcher(); print('CAT-007 passed')\"",
+    "context_files": [
+      "backend/catalog/schemas.py",
+      "backend/catalog/taxonomy_service.py",
+      "backend/catalog/models.py"
+    ],
+    "dependencies": [
+      "CAT-002",
+      "CAT-003"
+    ]
+  },
+  {
+    "task_id": "CAT-008",
+    "title": "Tier 3 Web-Grounded LLM Software Classifier Agent",
+    "description": "Implement 'backend/catalog/enrichment/llm_classifier.py'. When Tier 1/2 fails or metadata is ambiguous (e.g., 'setup.exe' inside 'Old_Tools/Audio_Routing'), 'LLMSoftwareClassifier' executes: (1) A lightweight web search query (DuckDuckGo HTML/Lite API or configured search provider, with graceful offline fallback) combining filename, PE ProductName, PE CompanyName, and parent folder hints; (2) An LLM completion call (supporting Ollama/LiteLLM/OpenAI-compatible JSON mode) constrained by 'LLMClassificationResult' schema and allowed categories from 'TaxonomyService'. Provide method 'classify_binary(metadata: RawBinaryMetadata) -> LLMClassificationResult'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/enrichment/llm_classifier.py"
+    ],
+    "context_paths": [
+      "backend/catalog/schemas.py",
+      "backend/catalog/taxonomy_service.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.enrichment.llm_classifier import LLMSoftwareClassifier; c = LLMSoftwareClassifier(); print('CAT-008 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-002",
+      "CAT-003",
+      "CAT-007"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:40:38.745009",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-008",
+    "test_command": "python -c \"from backend.catalog.enrichment.llm_classifier import LLMSoftwareClassifier; c = LLMSoftwareClassifier(); print('CAT-008 passed')\"",
+    "context_files": [
+      "backend/catalog/schemas.py",
+      "backend/catalog/taxonomy_service.py"
+    ],
+    "dependencies": [
+      "CAT-002",
+      "CAT-003",
+      "CAT-007"
+    ]
+  },
+  {
+    "task_id": "CAT-009",
+    "title": "Target Path Resolver & Sanitary Folder Tree Synthesizer",
+    "description": "Implement 'backend/catalog/organizer/path_resolver.py'. Create class 'TargetPathResolver' that transforms enriched 'BinaryAsset' + 'SoftwareProduct' records into clean target paths following the template: '{category_prefix}_{category_name}/{subcategory_name}/{canonical_vendor}/{canonical_name}/{version}/{clean_filename}'. Rules: (1) Sanitize all path segments (replace spaces with underscores or keep clean alphanumeric, strip illegal OS characters); (2) If 'confidence_score < 0.70', route to '99_Unclassified_Orphan_Binaries/{parent_folder_chain}/{current_filename}' with action 'SKIP_LOW_CONFIDENCE'; (3) If 'is_primary_copy == 0', set action to 'DELETE_DUPLICATE' (or 'ARCHIVE_DUPLICATE'); (4) Handle filename collisions by appending short hash suffixes if two distinct binaries map to the exact same target path. Provide 'generate_migration_plans(db_session) -> List[MigrationProposalContract]'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/organizer/__init__.py",
+      "backend/catalog/organizer/path_resolver.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.organizer.path_resolver import TargetPathResolver; r = TargetPathResolver(); print('CAT-009 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-001",
+      "CAT-002",
+      "CAT-003"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:41:14.926520",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-009",
+    "test_command": "python -c \"from backend.catalog.organizer.path_resolver import TargetPathResolver; r = TargetPathResolver(); print('CAT-009 passed')\"",
+    "context_files": [
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-001",
+      "CAT-002",
+      "CAT-003"
+    ]
+  },
+  {
+    "task_id": "CAT-010",
+    "title": "Transactional Migration Executor & Rollback Journal",
+    "description": "Implement 'backend/catalog/organizer/executor.py'. Create class 'StorageMigrationExecutor' that executes approved 'migration_plans' safely: (1) 'dry_run(target_root: str, db_session) -> dict' computes total bytes to move, space reclaimed by deduplication, folder tree diff preview, and checks disk write permissions; (2) 'execute_plan(target_root: str, db_session, mode=\"COPY_OR_MOVE\") -> dict' performs file operations, verifies SHA-256 integrity at destination before removing source, updates 'migration_plans.status = EXECUTED', and writes an append-only 'migration_rollback_manifest.json' containing (location_id, source_path, dest_path, sha256, timestamp); (3) 'rollback_migration(manifest_path: str, db_session) -> dict' restores files to their exact original locations and cleans up empty created directories.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/organizer/executor.py"
+    ],
+    "context_paths": [
+      "backend/catalog/models.py",
+      "backend/catalog/organizer/path_resolver.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.organizer.executor import StorageMigrationExecutor; e = StorageMigrationExecutor(); print('CAT-010 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-009"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-24T23:42:02.227806",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-010",
+    "test_command": "python -c \"from backend.catalog.organizer.executor import StorageMigrationExecutor; e = StorageMigrationExecutor(); print('CAT-010 passed')\"",
+    "context_files": [
+      "backend/catalog/models.py",
+      "backend/catalog/organizer/path_resolver.py"
+    ],
+    "dependencies": [
+      "CAT-009"
+    ]
+  },
+  {
+    "task_id": "CAT-011",
+    "title": "End-to-End Catalog Pipeline Orchestrator",
+    "description": "Implement 'backend/catalog/orchestrator.py' housing 'SoftwareCatalogOrchestrator'. Coordinates the full pipeline for a repository scan: (1) Seeds default taxonomies; (2) Runs 'RepositoryCrawler' from 'backend.catalog.scanner.crawler'; (3) Dispatches '.exe' to 'extract_pe_metadata' from 'backend.catalog.scanner.pe_parser' and '.msi' to 'extract_msi_metadata' from 'backend.catalog.scanner.msi_parser'; (4) Runs 'HeuristicMatcher' from 'backend.catalog.enrichment.heuristic_matcher' and falls back to 'LLMSoftwareClassifier' from 'backend.catalog.enrichment.llm_classifier'; (5) Updates FTS5 index 'catalog_fts' via SQL execution; (6) Calls 'TargetPathResolver' from 'backend.catalog.organizer.path_resolver' to populate 'migration_plans'. Provide method 'run_full_pipeline(source_root: str, target_root: str, db_session) -> dict'. STRICT: Never import from non-existent 'backend.catalog.indexing' or 'backend.catalog.resolver'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/catalog/orchestrator.py"
+    ],
+    "context_paths": [
+      "backend/catalog/scanner/crawler.py",
+      "backend/catalog/scanner/pe_parser.py",
+      "backend/catalog/scanner/msi_parser.py",
+      "backend/catalog/enrichment/heuristic_matcher.py",
+      "backend/catalog/enrichment/llm_classifier.py",
+      "backend/catalog/organizer/path_resolver.py"
+    ],
+    "verification_command": "python -c \"from backend.catalog.orchestrator import SoftwareCatalogOrchestrator; o = SoftwareCatalogOrchestrator(); print('CAT-011 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-004",
+      "CAT-005",
+      "CAT-006",
+      "CAT-007",
+      "CAT-008",
+      "CAT-009",
+      "CAT-010"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-25T00:36:09.009175",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-011",
+    "test_command": "python -c \"from backend.catalog.orchestrator import SoftwareCatalogOrchestrator; o = SoftwareCatalogOrchestrator(); print('CAT-011 passed')\"",
+    "context_files": [
+      "backend/catalog/scanner/crawler.py",
+      "backend/catalog/scanner/pe_parser.py",
+      "backend/catalog/scanner/msi_parser.py",
+      "backend/catalog/enrichment/heuristic_matcher.py",
+      "backend/catalog/enrichment/llm_classifier.py",
+      "backend/catalog/organizer/path_resolver.py"
+    ],
+    "dependencies": [
+      "CAT-004",
+      "CAT-005",
+      "CAT-006",
+      "CAT-007",
+      "CAT-008",
+      "CAT-009",
+      "CAT-010"
+    ]
+  },
+  {
+    "task_id": "CAT-012",
+    "title": "Software Catalog & Reorganization FastAPI Endpoints",
+    "description": "Implement 'backend/api/routes/software_catalog.py' exposing FastAPI routes under '/api/v1/catalog': (1) 'POST /scan' (trigger full scan & enrichment pipeline on source directory); (2) 'GET /items' (search and filter catalog via FTS5, category, vendor, architecture, or low-confidence flag); (3) 'PATCH /items/{product_id}' (human override for vendor, name, or taxonomy category, setting is_human_verified=1 and recomputing migration path); (4) 'GET /migration/preview' (return before/after directory tree structure and duplicate savings metrics); (5) 'POST /migration/execute' (execute approved moves/copies); (6) 'POST /migration/rollback' (revert executed migration via manifest).",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "backend/api/routes/software_catalog.py"
+    ],
+    "context_paths": [
+      "backend/catalog/orchestrator.py",
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "verification_command": "python -c \"from backend.api.routes.software_catalog import router; assert len(router.routes) >= 6; print('CAT-012 passed')\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-011"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-25T00:36:46.755233",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-012",
+    "test_command": "python -c \"from backend.api.routes.software_catalog import router; assert len(router.routes) >= 6; print('CAT-012 passed')\"",
+    "context_files": [
+      "backend/catalog/orchestrator.py",
+      "backend/catalog/models.py",
+      "backend/catalog/schemas.py"
+    ],
+    "dependencies": [
+      "CAT-011"
+    ]
+  },
+  {
+    "task_id": "CAT-013",
+    "title": "Software Catalog Explorer & Tree Diff UI Component",
+    "description": "Create 'frontend/components/software_catalog.js' implementing the interactive Software Catalog and Storage Organizer interface: (1) Scan Control Bar: input source messy repository path, trigger scan, and view progress metrics (total binaries, unique hashes, duplicate space wasted); (2) Catalog Explorer Grid: FTS5 instant search, category filter sidebar, confidence score badges, PE/MSI metadata modal inspector, and inline category reassignment dropdown; (3) Interactive Before/After Tree Diff: side-by-side collapsible folder tree comparing current chaotic paths against proposed logical taxonomy structure, with buttons for 'Dry-Run Simulation', 'Execute Reorganization', and 'Rollback'.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "frontend/components/software_catalog.js"
+    ],
+    "context_paths": [
+      "backend/api/routes/software_catalog.py"
+    ],
+    "verification_command": "node -e \"const fs = require('fs'); if (!fs.existsSync('frontend/components/software_catalog.js')) process.exit(1); console.log('CAT-013 passed');\"",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-012"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": "PC2-Nitro+PC1-Local",
+    "last_error": null,
+    "completed_at": "2026-10-25T00:37:50.633757",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-013",
+    "test_command": "node -e \"const fs = require('fs'); if (!fs.existsSync('frontend/components/software_catalog.js')) process.exit(1); console.log('CAT-013 passed');\"",
+    "context_files": [
+      "backend/api/routes/software_catalog.py"
+    ],
+    "dependencies": [
+      "CAT-012"
+    ]
+  },
+  {
+    "task_id": "CAT-014",
+    "title": "End-to-End Synthetic Messy Repository Golden Test Suite",
+    "description": "Implement 'tests/catalog/test_golden_catalog.py' to validate the entire pipeline unattended. STRICT FIX: Define module-level `@pytest.fixture` functions for `source_root`, `target_root`, and `db_session` at the top of the file using `tmp_path` so they are globally available as pytest fixtures. Do NOT nest fixtures inside test classes or use autouse fixtures that require missing parameters. The test suite dynamically generates a temporary chaotic folder tree containing: (1) Mock '.exe' files with synthetic PE VS_VERSION_INFO headers; (2) A byte-for-byte duplicate '.exe' in a deeply nested subfolder; (3) A mock '.msi' installer. Assert that: 'SoftwareCatalogOrchestrator' deduplicates the identical binary, extracts PE/MSI strings, assigns high-confidence software to proper taxonomy folders, routes low-confidence binaries to '99_Unclassified_Orphan_Binaries', executes file reorganization into a clean target root, and cleanly restores the original messy tree upon rollback.",
+    "task_type": "code_implementation",
+    "required_capabilities": [
+      "remote_reasoning",
+      "local_write",
+      "local_test"
+    ],
+    "preferred_executor": "remote_brain_then_local_executor",
+    "allowed_paths": [
+      "tests/catalog/__init__.py",
+      "tests/catalog/test_golden_catalog.py"
+    ],
+    "context_paths": [
+      "backend/catalog/orchestrator.py",
+      "backend/catalog/organizer/executor.py"
+    ],
+    "verification_command": "python -m pytest tests/catalog/test_golden_catalog.py",
+    "output_artifact_schema": "PatchSpec",
+    "max_attempts": 2,
+    "failure_policy": "classify_before_retry",
+    "dependency_ids": [
+      "CAT-011",
+      "CAT-012"
+    ],
+    "status": "completed",
+    "attempts": 1,
+    "last_worker": null,
+    "last_error": null,
+    "completed_at": "2026-10-25T00:48:50.227230",
+    "handoff_warning": null,
+    "failure_history": [],
+    "id": "CAT-014",
+    "test_command": "python -m pytest tests/catalog/test_golden_catalog.py",
+    "context_files": [
+      "backend/catalog/orchestrator.py",
+      "backend/catalog/organizer/executor.py"
+    ],
+    "dependencies": [
+      "CAT-011",
+      "CAT-012"
+    ]
+  }
+]

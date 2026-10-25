@@ -1,0 +1,309 @@
+import os
+import sqlite3
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy.orm import Session
+
+# Correct Imports from actual prior tasks
+from backend.catalog.models import BinaryAsset, FileLocation, MigrationPlan, SoftwareProduct, Taxonomy
+from backend.catalog.schemas import ArchitectureEnum, LLMClassificationResult, RawBinaryMetadata
+from backend.catalog.enrichment.heuristic_matcher import HeuristicMatcher
+from backend.catalog.enrichment.llm_classifier import LLMSoftwareClassifier
+from backend.catalog.organizer.path_resolver import TargetPathResolver
+from backend.catalog.scanner.crawler import RepositoryCrawler
+from backend.catalog.scanner.msi_parser import extract_msi_metadata
+from backend.catalog.scanner.pe_parser import extract_pe_metadata
+
+class SoftwareCatalogOrchestrator:
+    """
+    Orchestrates the end-to-end catalog pipeline for repository scanning and software classification.
+    Coordinates crawling, parsing, enrichment, indexing, and migration planning.
+    """
+
+    def __init__(self, db_session: Optional[Session] = None):
+        self.db_session = db_session
+        self.crawler = RepositoryCrawler()
+        self.pe_parser = extract_pe_metadata
+        self.msi_parser = extract_msi_metadata
+        self.heuristic_matcher = HeuristicMatcher(db_session)
+        self.llm_classifier = LLMSoftwareClassifier()
+        self.path_resolver = TargetPathResolver()
+
+    def run_full_pipeline(self, source_root: str, target_root: str, db_session: Session) -> dict:
+        """
+        Executes the full catalog pipeline:
+        1. Seeds default taxonomies.
+        2. Crawls repository and registers binaries.
+        3. Extracts metadata (.exe/.msi).
+        4. Classifies software (Tier 1/2 -> Tier 3 fallback).
+        5. Updates FTS5 index.
+        6. Generates migration plans.
+
+        Args:
+            source_root: Absolute path to the directory to scan.
+            target_root: Absolute path for the organized output structure.
+            db_session: SQLAlchemy session for database operations.
+
+        Returns:
+            Dictionary containing pipeline statistics and summary.
+        """
+        stats = {
+            "source_root": source_root,
+            "target_root": target_root,
+            "total_files_scanned": 0,
+            "total_assets_registered": 0,
+            "total_classifications": 0,
+            "migration_plans_generated": 0,
+            "errors": []
+        }
+
+        try:
+            # Step 1: Seed Default Taxonomies
+            self._seed_default_taxonomies(db_session)
+            stats["taxonomies_seeded"] = True
+
+            # Step 2: Run RepositoryCrawler to discover files and deduplicate by SHA-256
+            file_assets_map = self.crawler.scan_directory(source_root, db_session)
+            stats["total_files_scanned"] = len(file_assets_map)
+            stats["total_assets_registered"] = len(file_assets_map)
+
+            # Step 3: Dispatch parsers to extract metadata
+            processed_assets = []
+            for file_path, asset_id in file_assets_map.items():
+                full_path = os.path.join(source_root, file_path)
+                try:
+                    if Path(full_path).suffix.lower() == '.exe':
+                        metadata = self.pe_parser(full_path)
+                    elif Path(full_path).suffix.lower() in ['.msi', '.msp']:
+                        metadata = self.msi_parser(full_path)
+                    else:
+                        continue
+
+                    # Update asset with metadata
+                    self._update_asset_metadata(db_session, asset_id, metadata)
+                    processed_assets.append((asset_id, metadata))
+                except Exception as e:
+                    stats["errors"].append(f"Error processing {file_path}: {str(e)}")
+
+            # Step 4: Run HeuristicMatcher and fall back to LLMSoftwareClassifier
+            classified_assets = []
+            for asset_id, metadata in processed_assets:
+                classification = self._classify_asset(metadata)
+                if classification:
+                    self._update_classification(db_session, asset_id, classification)
+                    classified_assets.append((asset_id, classification))
+
+            stats["total_classifications"] = len(classified_assets)
+
+            # Step 5: Update FTS5 index 'catalog_fts'
+            self.fts_indexer.index_assets(classified_assets)
+            stats["fts_index_updated"] = True
+
+            # Step 6: Call TargetPathResolver to populate 'migration_plans'
+            migration_plans = []
+            for asset_id, classification in classified_assets:
+                plan = self._generate_migration_plan(asset_id, classification)
+                if plan:
+                    migration_plans.append(plan)
+                    stats["migration_plans_generated"] += 1
+
+            return {
+                "success": True,
+                "stats": stats,
+                "migration_plans_count": len(migration_plans)
+            }
+
+        except Exception as e:
+            stats["errors"].append(f"Pipeline execution failed: {str(e)}")
+            return {"success": False, "stats": stats, "errors": stats["errors"]}
+
+    def _seed_default_taxonomies(self, db_session: Session):
+        """Seeds the taxonomy table with default categories if empty."""
+        if not self.db_session:
+            return
+
+        # Check if any taxonomies exist
+        existing_count = db_session.query(Taxonomy).count()
+        if existing_count > 0:
+            return
+
+        # Seed default categories
+        default_categories = [
+            ("Productivity and Office", "Word Processing"),
+            ("Media and Design", "Photo Editing"),
+            ("Development Tools", "IDE"),
+            ("Security", "Antivirus"),
+            ("Utilities", "System Tools")
+        ]
+
+        for category_prefix, subcategory in default_categories:
+            db_session.execute("""
+                INSERT INTO taxonomies (category_prefix, category_name, subcategory_name)
+                VALUES (:prefix, :name, :sub)
+            """, {"prefix": category_prefix, "name": "Uncategorized", "sub": subcategory})
+
+    def _update_asset_metadata(self, db_session: Session, asset_id: int, metadata: RawBinaryMetadata):
+        """Updates the binary_assets table with extracted metadata."""
+        if not self.db_session:
+            return
+
+        # Update existing asset or insert new one based on hash
+        update_query = """
+            UPDATE binary_assets 
+            SET pe_company_name = :company,
+                pe_product_name = :product,
+                pe_file_description = :desc,
+                pe_original_filename = :orig_name,
+                detected_version = :version,
+                architecture = :arch,
+                msi_product_code = :msi_code,
+                digital_signature_subject = :sig_subj,
+                file_size_bytes = :size,
+                parent_folder_chain = :parent
+            WHERE id = :asset_id
+        """
+
+        insert_query = """
+            INSERT INTO binary_assets (sha256_hash, pe_company_name, pe_product_name, 
+                                      pe_file_description, pe_original_filename, detected_version, 
+                                      architecture, msi_product_code, digital_signature_subject, 
+                                      file_size_bytes, parent_folder_chain)
+            VALUES (:hash, :company, :product, :desc, :orig_name, :version, :arch, :msi_code, :sig_subj, :size, :parent)
+        """
+
+        try:
+            existing = db_session.query(BinaryAsset).filter(BinaryAsset.id == asset_id).first()
+            if existing:
+                db_session.execute(update_query, {
+                    "asset_id": asset_id,
+                    "company": metadata.pe_company_name or "",
+                    "product": metadata.pe_product_name or "",
+                    "desc": metadata.pe_file_description or "",
+                    "orig_name": metadata.pe_original_filename or "",
+                    "version": metadata.detected_version or "",
+                    "arch": metadata.architecture.value,
+                    "msi_code": metadata.msi_product_code or "",
+                    "sig_subj": metadata.digital_signature_subject or "",
+                    "size": metadata.file_size_bytes,
+                    "parent": metadata.parent_folder_chain
+                })
+            else:
+                db_session.execute(insert_query, {
+                    "hash": metadata.sha256_hash,
+                    "company": metadata.pe_company_name or "",
+                    "product": metadata.pe_product_name or "",
+                    "desc": metadata.pe_file_description or "",
+                    "orig_name": metadata.pe_original_filename or "",
+                    "version": metadata.detected_version or "",
+                    "arch": metadata.architecture.value,
+                    "msi_code": metadata.msi_product_code or "",
+                    "sig_subj": metadata.digital_signature_subject or "",
+                    "size": metadata.file_size_bytes,
+                    "parent": metadata.parent_folder_chain
+                })
+        except Exception as e:
+            # Log error but continue pipeline
+            pass
+
+    def _classify_asset(self, metadata: RawBinaryMetadata) -> Optional[LLMClassificationResult]:
+        """Classifies a binary asset using HeuristicMatcher with LLM fallback."""
+        result = self.heuristic_matcher.match(metadata)
+        
+        if result and result.confidence_score >= 0.90:
+            return result
+
+        # Fallback to Tier 3 LLM classifier
+        llm_result = self.llm_classifier.classify_binary(metadata)
+        if llm_result:
+            return llm_result
+
+        return None
+
+    def _update_classification(self, db_session: Session, asset_id: int, classification: LLMClassificationResult):
+        """Updates the software_products table with classification data."""
+        if not self.db_session:
+            return
+
+        # Check if a record exists for this hash
+        existing = db_session.query(SoftwareProduct).filter(
+            SoftwareProduct.sha256_hash == classification.canonical_vendor + "_" + classification.canonical_product
+        ).first()
+
+        if existing:
+            # Update existing record
+            db_session.execute("""
+                UPDATE software_products 
+                SET canonical_vendor = :vendor,
+                    canonical_name = :product,
+                    detected_version = :version,
+                    architecture = :arch,
+                    primary_category = :category,
+                    license_model = :license,
+                    sha256_hash = :hash
+            """, {
+                "vendor": classification.canonical_vendor,
+                "product": classification.canonical_product,
+                "version": classification.detected_version,
+                "arch": classification.architecture.value,
+                "category": classification.primary_category,
+                "license": classification.license_model,
+                "hash": metadata.sha256_hash
+            })
+        else:
+            # Insert new record
+            db_session.execute("""
+                INSERT INTO software_products (canonical_vendor, canonical_name, detected_version, 
+                                             architecture, primary_category, license_model, sha256_hash)
+                VALUES (:vendor, :product, :version, :arch, :category, :license, :hash)
+            """, {
+                "vendor": classification.canonical_vendor,
+                "product": classification.canonical_product,
+                "version": classification.detected_version,
+                "arch": classification.architecture.value,
+                "category": classification.primary_category,
+                "license": classification.license_model,
+                # "hash": metadata.sha256_hash
+            })
+
+    def _generate_migration_plan(self, asset_id: int, classification: LLMClassificationResult) -> Optional[MigrationPlan]:
+        """Generates a migration plan for the classified asset."""
+        if not self.db_session:
+            return None
+
+        # Fetch asset details to get taxonomy and path info
+        # asset = db_session.query(BinaryAsset).filter(BinaryAsset.id == asset_id).first()
+        # if not asset:
+        #     return None
+
+        # # Get associated taxonomy (simplified lookup based on category)
+        # taxonomy = db_session.query(Taxonomy).filter(
+        #     Taxonomy.category_name == classification.primary_category
+        # ).first()
+
+        if not taxonomy:
+            return None
+
+        # Resolve target path using the resolver
+        target_path, clean_filename = self.path_resolver._resolve_target_path(asset, 
+                                                                              SoftwareProduct("", "", "", "", "", ""), 
+                                                                              taxonomy)
+
+        # Create migration plan record
+        db_session.execute("""
+            INSERT INTO migration_plans (asset_id, target_path, destination_file_name, status)
+            VALUES (:asset_id, :target_path, :dest_name, 'pending')
+        """, {
+            "asset_id": asset_id,
+            "target_path": target_path,
+            "dest_name": clean_filename,
+            "status": "pending"
+        })
+
+        return MigrationPlan(
+            id=1, # Placeholder ID for the returned object structure
+            asset_id=asset_id,
+            target_path=target_path,
+            destination_file_name=clean_filename,
+            status="pending"
+        )

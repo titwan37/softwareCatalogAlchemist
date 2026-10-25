@@ -1,10 +1,12 @@
 import os
 import hashlib
 import sqlite3
+import logging
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
 from sqlalchemy.orm import Session
+from backend.catalog.models import BinaryAsset, FileLocation
 
 
 class RepositoryCrawler:
@@ -38,6 +40,7 @@ class RepositoryCrawler:
             return results
 
         root_dir = Path(root_path).resolve()
+        logging.info(f"Discovered: {root_dir}")
 
         def _walk(current_path: Path, relative_prefix: str) -> None:
             """Recursive helper to walk the directory tree."""
@@ -54,10 +57,11 @@ class RepositoryCrawler:
                     
                     _walk(entry, new_breadcrumb)
                 elif entry.is_file() and entry.suffix.lower() in self.SUPPORTED_EXTENSIONS:
+                    logging.info(f"Scanning: {entry}") # Add this line to stream active files
                     file_hash = self._compute_sha256(entry)
                     
                     # Check for existing hash
-                    asset_id = self._handle_duplicate(file_hash, db_session, root_dir)
+                    asset_id = self._handle_duplicate(entry, file_hash, db_session, root_dir)
                     
                     if asset_id is not None:
                         results[str(entry.relative_to(root_dir))] = asset_id
@@ -83,13 +87,14 @@ class RepositoryCrawler:
         
         return sha256_hash.hexdigest()
 
-    def _handle_duplicate(self, file_hash: str, db_session: Session, root_dir: Path) -> Optional[int]:
+    def _handle_duplicate(self, file_path: Path, file_hash: str, db_session: Session, root_dir: Path) -> Optional[int]:
         """
         Check if the hash already exists in the database.
         If found, returns the existing asset ID (marking it as primary if not already).
         If new, creates a new record and returns the new asset ID.
         
         Args:
+            file_path: Path to the current file.
             file_hash: The computed SHA-256 hash.
             db_session: SQLAlchemy session.
             root_dir: The root directory used for relative path calculation.
@@ -97,49 +102,59 @@ class RepositoryCrawler:
         Returns:
             Asset ID if found or created, None otherwise.
         """
-        # Check existing records for this hash
-        existing = db_session.query("binary_assets").filter(
-            "binary_assets.sha256_hash" == file_hash
+        existing = db_session.query(BinaryAsset).filter(
+            BinaryAsset.sha256_hash == file_hash
         ).first()
 
+        try:
+            parent_chain = str(file_path.parent.relative_to(root_dir))
+            if parent_chain == ".":
+                parent_chain = ""
+        except Exception:
+            parent_chain = str(file_path.parent)
+
         if existing:
-            # If a record exists, ensure the primary copy is marked correctly.
-            # We assume the first occurrence found during scan (shortest path) is primary.
-            # However, to be safe against re-scans of same files, we check file_locations.
-            locations = db_session.query("file_locations").filter(
-                "file_locations.asset_id" == existing.id,
-                "file_locations.is_primary_copy" == True
+            logging.info(f"Duplicate skipped: {file_path.name}") # Add this line
+            existing_loc = db_session.query(FileLocation).filter(
+                FileLocation.current_full_path == str(file_path)
             ).first()
 
-            if not locations:
-                # No primary copy found for this asset yet, promote the current one
-                db_session.execute("""
-                    UPDATE file_locations 
-                    SET is_primary_copy = 1 
-                    WHERE asset_id = :asset_id
-                """, {"asset_id": existing.id})
-            
+            if not existing_loc:
+                duplicate_loc = FileLocation(
+                    asset_id=existing.id,
+                    current_full_path=str(file_path),
+                    current_filename=file_path.name,
+                    parent_folder_chain=parent_chain,
+                    is_primary_copy=False
+                )
+                db_session.add(duplicate_loc)
+                db_session.commit()
+
             return existing.id
 
-        # New hash, create record
-        new_asset = db_session.execute("""
-            INSERT INTO binary_assets (sha256_hash) VALUES (:hash)
-        """, {"hash": file_hash}).fetchone()[0]
+        # New unique hash
+        try:
+            file_size = file_path.stat().st_size
+        except Exception:
+            file_size = 0
 
-        # Register the physical path in file_locations
-        # Extract filename and parent folder chain
-        rel_path = str(Path(file_path).relative_to(root_dir))
-        filename = Path(file_path).name
-        parent_chain = str(Path(file_path).parent.relative_to(root_dir))
+        logging.info(f"New asset registered: {file_path.name}") # Add this line
+        new_asset = BinaryAsset(
+            sha256_hash=file_hash,
+            file_size_bytes=file_size,
+            file_extension=file_path.suffix.lower()
+        )
+        db_session.add(new_asset)
+        db_session.flush()
 
-        db_session.execute("""
-            INSERT INTO file_locations (asset_id, current_full_path, current_filename, parent_folder_chain)
-            VALUES (:asset_id, :full_path, :filename, :chain)
-        """, {
-            "asset_id": new_asset,
-            "full_path": str(file_path),
-            "filename": filename,
-            "chain": parent_chain
-        })
+        primary_loc = FileLocation(
+            asset_id=new_asset.id,
+            current_full_path=str(file_path),
+            current_filename=file_path.name,
+            parent_folder_chain=parent_chain,
+            is_primary_copy=True
+        )
+        db_session.add(primary_loc)
+        db_session.commit()
 
-        return new_asset
+        return new_asset.id

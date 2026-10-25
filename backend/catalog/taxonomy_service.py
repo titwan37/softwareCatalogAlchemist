@@ -1,6 +1,5 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from backend.catalog.models import Taxonomy
 
@@ -9,43 +8,43 @@ DEFAULT_TAXONOMIES = [
     {
         "category_prefix": "01_Development_Tools",
         "category_name": "Development Tools",
-        "subcategory_name": None,
+        "subcategory_name": "IDEs_and_Editors",
         "description": "IDEs, compilers, and build automation utilities."
     },
     {
         "category_prefix": "02_Productivity_and_Office",
         "category_name": "Productivity and Office",
-        "subcategory_name": None,
+        "subcategory_name": "Word_Processing",
         "description": "Word processors, spreadsheets, and project management software."
     },
     {
         "category_prefix": "03_System_Utilities",
         "category_name": "System Utilities",
-        "subcategory_name": None,
+        "subcategory_name": "Compression",
         "description": "Disk management, system monitoring, and maintenance tools."
     },
     {
         "category_prefix": "04_Drivers_and_Hardware",
         "category_name": "Drivers and Hardware",
-        "subcategory_name": None,
+        "subcategory_name": "Drivers",
         "description": "Device drivers and hardware configuration utilities."
     },
     {
         "category_prefix": "05_Media_and_Design",
         "category_name": "Media and Design",
-        "subcategory_name": None,
+        "subcategory_name": "Photo_Editing",
         "description": "Photo editing, video production, and graphic design suites."
     },
     {
         "category_prefix": "06_Security_and_Network",
         "category_name": "Security and Network",
-        "subcategory_name": None,
+        "subcategory_name": "Network",
         "description": "Firewalls, antivirus, and network monitoring tools."
     },
     {
         "category_prefix": "07_Scientific_and_CAD",
         "category_name": "Scientific and CAD",
-        "subcategory_name": None,
+        "subcategory_name": "CAD",
         "description": "Simulation software, scientific calculators, and computer-aided design."
     },
     {
@@ -58,8 +57,9 @@ DEFAULT_TAXONOMIES = [
 
 
 class TaxonomyService:
-    def __init__(self):
+    def __init__(self, db_session: Optional[Session] = None):
         self._default_taxonomies = DEFAULT_TAXONOMIES
+        self.db_session = db_session
 
     def seed_default_taxonomies(self, db_session: Session) -> int:
         """Seed the database with default taxonomy categories."""
@@ -76,58 +76,89 @@ class TaxonomyService:
         db_session.commit()
         return count
 
-    def resolve_taxonomy(self, category_name: str, subcategory_name: Optional[str] = None) -> Dict[str, Any]:
-        """Resolve a taxonomy entry by name."""
-        query = text("""
-            SELECT 
-                t.category_prefix,
-                t.category_name,
-                COALESCE(s.subcategory_name, NULL) as subcategory_name,
-                COALESCE(t.description, '') as description
-            FROM taxonomies t
-            LEFT JOIN taxonomies s ON t.id = s.parent_id
-            WHERE t.category_name = :category_name
-        """)
+    def resolve_taxonomy(
+        self,
+        category_name: str,
+        subcategory_name: Optional[str] = None,
+        db_session: Optional[Session] = None
+    ) -> Taxonomy:
+        """Resolve a taxonomy entry by name, returning a Taxonomy model instance."""
+        session = db_session or self.db_session
+        norm_cat = (category_name or "").lower().replace("_", " ")
 
-        result = db_session.execute(query, {"category_name": category_name}).fetchone()
-        if not result:
-            raise ValueError(f"Category '{category_name}' not found in taxonomy.")
+        if session:
+            try:
+                all_tax = session.query(Taxonomy).all()
+                # 1. Exact match
+                for t in all_tax:
+                    t_cat = (t.category_name or "").lower().replace("_", " ")
+                    t_pref = (t.category_prefix or "").lower().replace("_", " ")
+                    if norm_cat in t_cat or t_cat in norm_cat or norm_cat in t_pref or t_pref in norm_cat:
+                        if subcategory_name and t.subcategory_name:
+                            if subcategory_name.lower() in t.subcategory_name.lower():
+                                return t
+                        elif not subcategory_name:
+                            return t
+                
+                # 2. Relaxed match
+                for t in all_tax:
+                    t_cat = (t.category_name or "").lower().replace("_", " ")
+                    t_pref = (t.category_prefix or "").lower().replace("_", " ")
+                    if norm_cat in t_cat or t_cat in norm_cat or norm_cat in t_pref or t_pref in norm_cat:
+                        return t
+            except Exception:
+                pass
 
-        return {
-            "category_prefix": result.category_prefix,
-            "category_name": result.category_name,
-            "subcategory_name": result.subcategory_name,
-            "description": result.description
-        }
+        # Check in DEFAULT_TAXONOMIES
+        for tax_data in self._default_taxonomies:
+            t_cat = tax_data["category_name"].lower().replace("_", " ")
+            t_pref = tax_data["category_prefix"].lower().replace("_", " ")
+            if norm_cat in t_cat or t_cat in norm_cat or norm_cat in t_pref or t_pref in norm_cat:
+                tax = Taxonomy(
+                    category_prefix=tax_data["category_prefix"],
+                    category_name=tax_data["category_name"],
+                    subcategory_name=subcategory_name or tax_data.get("subcategory_name"),
+                    description=tax_data.get("description")
+                )
+                if session:
+                    session.add(tax)
+                    session.commit()
+                return tax
 
-    def get_taxonomy_tree(self) -> List[Dict[str, Any]]:
+        # Fallback
+        prefix = "99" if ("orphan" in norm_cat or "unclassified" in norm_cat) else "00"
+        fallback_tax = Taxonomy(
+            category_prefix=prefix,
+            category_name=category_name or "Uncategorized",
+            subcategory_name=subcategory_name,
+            description=f"Auto-resolved category for {category_name}"
+        )
+        if session:
+            session.add(fallback_tax)
+            session.commit()
+        return fallback_tax
+
+    def get_taxonomy_tree(self, db_session: Optional[Session] = None) -> List[Dict[str, Any]]:
         """Retrieve the full taxonomy tree structure."""
-        query = text("""
-            SELECT 
-                t.id,
-                t.category_prefix,
-                t.category_name,
-                COALESCE(s.subcategory_name, NULL) as subcategory_name,
-                t.description
-            FROM taxonomies t
-            LEFT JOIN taxonomies s ON t.id = s.parent_id
-            ORDER BY t.category_prefix, t.category_name
-        """)
+        session = db_session or self.db_session
+        if session:
+            try:
+                taxonomies = session.query(Taxonomy).all()
+                if taxonomies:
+                    return [
+                        {
+                            "id": t.id,
+                            "category_prefix": t.category_prefix,
+                            "category_name": t.category_name,
+                            "subcategory_name": t.subcategory_name,
+                            "description": t.description
+                        }
+                        for t in taxonomies
+                    ]
+            except Exception:
+                pass
 
-        results = db_session.execute(query).fetchall()
-        tree = []
-        for row in results:
-            entry = {
-                "id": row.id,
-                "category_prefix": row.category_prefix,
-                "category_name": row.category_name,
-                "subcategory_name": row.subcategory_name,
-                "description": row.description
-            }
-            tree.append(entry)
-
-        return tree
+        return [dict(t) for t in self._default_taxonomies]
 
 
-# Global instance for easy access
 _taxonomy_service = TaxonomyService()

@@ -1,6 +1,6 @@
-import os
+import os, re
 import struct
-import re
+import hashlib
 from typing import Optional, List
 from pathlib import Path
 
@@ -22,7 +22,7 @@ def extract_pe_metadata(file_path: str) -> RawBinaryMetadata:
     
     # Initialize metadata with defaults
     metadata = RawBinaryMetadata(
-        sha256_hash="0" * 64,  # Placeholder; real hash would require hashlib
+        sha256_hash="0" * 64,
         file_size_bytes=0,
         file_extension=path.suffix.lower(),
         architecture=ArchitectureEnum.Unknown,
@@ -46,6 +46,9 @@ def extract_pe_metadata(file_path: str) -> RawBinaryMetadata:
     try:
         with open(file_path, 'rb') as f:
             raw_data = f.read()
+        
+        metadata.sha256_hash = hashlib.sha256(raw_data).hexdigest()
+        metadata.file_size_bytes = len(raw_data)
         
         # Attempt pefile parsing
         if pefile is not None:

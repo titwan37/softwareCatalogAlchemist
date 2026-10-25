@@ -1,10 +1,16 @@
 import os
-import sqlite3
-from typing import Dict, List, Optional, Tuple
 from pathlib import Path
-
+from typing import Dict, List, Optional, Any
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.catalog.models import (
+    BinaryAsset, FileLocation, MigrationPlan, SoftwareProduct, Taxonomy, init_catalog_db
+)
+from backend.catalog.schemas import (
+    ArchitectureEnum, LLMClassificationResult, RawBinaryMetadata, ActionTypeEnum
+)
+from backend.catalog.taxonomy_service import TaxonomyService
 from backend.catalog.scanner.crawler import RepositoryCrawler
 from backend.catalog.scanner.pe_parser import extract_pe_metadata
 from backend.catalog.scanner.msi_parser import extract_msi_metadata
@@ -12,7 +18,6 @@ from backend.catalog.enrichment.heuristic_matcher import HeuristicMatcher
 from backend.catalog.enrichment.llm_classifier import LLMSoftwareClassifier
 from backend.catalog.organizer.path_resolver import TargetPathResolver
 
-# FTS5 Index Table Name
 FTS_INDEX_NAME = "catalog_fts"
 
 
@@ -22,11 +27,13 @@ class SoftwareCatalogOrchestrator:
     Coordinates crawling, parsing, classification, indexing, and migration planning.
     """
 
-    def __init__(self):
+    def __init__(self, db_session: Optional[Session] = None):
+        self.db_session = db_session
         self.crawler = RepositoryCrawler()
-        self.heuristic_matcher = HeuristicMatcher()
+        self.heuristic_matcher = HeuristicMatcher(db_session)
         self.llm_classifier = LLMSoftwareClassifier()
         self.path_resolver = TargetPathResolver()
+        self.taxonomy_service = TaxonomyService()
 
     def run_full_pipeline(self, source_root: str, target_root: str, db_session: Session) -> dict:
         """
@@ -34,13 +41,14 @@ class SoftwareCatalogOrchestrator:
         
         Args:
             source_root: Path to the directory to scan.
-            target_root: Path where migration plans will be stored (used for context).
+            target_root: Target directory for planned migrations.
             db_session: SQLAlchemy session for database operations.
             
         Returns:
             Dictionary containing pipeline statistics and results.
         """
         stats = {
+            "success": True,
             "source_root": source_root,
             "target_root": target_root,
             "files_scanned": 0,
@@ -49,161 +57,181 @@ class SoftwareCatalogOrchestrator:
             "msi_files_processed": 0,
             "classifications_generated": 0,
             "fts_index_updated": False,
-            "migration_plans_created": 0
+            "migration_plans_created": 0,
+            "errors": []
         }
 
-        # Step 1: Seed default taxonomies (Simulated via HeuristicMatcher internal state or DB)
-        # In a real implementation, this would populate the taxonomy tables.
+        # Step 1: Seed default taxonomies
         self._seed_taxonomies(db_session)
 
-        # Step 2: Run RepositoryCrawler to find binaries and register assets
-        print(f"Scanning directory: {source_root}")
+        # Step 2: Run RepositoryCrawler to discover binaries and register assets/locations
         file_assets = self.crawler.scan_directory(source_root, db_session)
-        
         stats["files_scanned"] = len(file_assets)
-        stats["assets_registered"] = len(file_assets)
+        stats["assets_registered"] = len(set(file_assets.values()))
 
-        # Step 3: Dispatch parsers based on extension
-        pe_files = []
-        msi_files = []
+        # Step 3 & 4: Parse metadata and classify each unique asset
+        for rel_path, asset_id in file_assets.items():
+            full_path = str(Path(source_root) / rel_path)
+            ext = Path(rel_path).suffix.lower()
 
-        for file_path in file_assets.keys():
-            ext = Path(file_path).suffix.lower()
-            if ext == '.exe':
-                pe_files.append(file_path)
-                stats["pe_files_processed"] += 1
-            elif ext in ['.msi', '.msp']:
-                msi_files.append(file_path)
-                stats["msi_files_processed"] += 1
+            metadata: Optional[RawBinaryMetadata] = None
+            try:
+                if ext == '.exe':
+                    metadata = extract_pe_metadata(full_path)
+                    stats["pe_files_processed"] += 1
+                elif ext in ['.msi', '.msp']:
+                    metadata = extract_msi_metadata(full_path)
+                    stats["msi_files_processed"] += 1
+            except Exception as e:
+                stats["errors"].append(f"Failed parsing {rel_path}: {e}")
+                continue
 
-        # Step 4: Run HeuristicMatcher and LLMClassifier
-        classifications = []
-        
-        for file_path in pe_files:
-            metadata = extract_pe_metadata(file_path)
+            if not metadata:
+                continue
+
+            # Update asset record with extracted PE/MSI metadata
+            asset = db_session.get(BinaryAsset, asset_id)
+            if asset:
+                if metadata.pe_company_name:
+                    asset.pe_company_name = metadata.pe_company_name
+                if metadata.pe_product_name:
+                    asset.pe_product_name = metadata.pe_product_name
+                if metadata.pe_file_description:
+                    asset.pe_file_description = metadata.pe_file_description
+                if metadata.pe_original_filename:
+                    asset.pe_original_filename = metadata.pe_original_filename
+                if metadata.detected_version:
+                    asset.detected_version = metadata.detected_version
+                if metadata.architecture and metadata.architecture != ArchitectureEnum.Unknown:
+                    asset.architecture = metadata.architecture.value
+                if metadata.msi_product_code:
+                    asset.msi_product_code = metadata.msi_product_code
+                if metadata.digital_signature_subject:
+                    asset.digital_signature_subject = metadata.digital_signature_subject
+                db_session.commit()
+
+            # Classify: Tier 1/2 -> Tier 3
             classification = self.heuristic_matcher.match(metadata)
+            enrichment_source = "HEURISTIC"
             if not classification:
-                classification = self.llm_classifier.classify_binary(metadata)
-            classifications.append(classification)
-            stats["classifications_generated"] += 1
+                try:
+                    classification = self.llm_classifier.classify_binary(metadata)
+                    enrichment_source = "LLM_WEB"
+                except Exception as e:
+                    stats["errors"].append(f"LLM classification error for {rel_path}: {e}")
+                    classification = None
 
-        for file_path in msi_files:
-            metadata = extract_msi_metadata(file_path)
-            # MSI files might be handled similarly or via a specific MSI matcher if available
-            # For this pipeline, we apply the same enrichment logic
-            classification = self.heuristic_matcher.match(metadata)
-            if not classification:
-                classification = self.llm_classifier.classify_binary(metadata)
-            classifications.append(classification)
-            stats["classifications_generated"] += 1
+            if classification:
+                stats["classifications_generated"] += 1
+                self._link_product_and_taxonomy(db_session, asset, classification, enrichment_source)
 
-        # Step 5: Update FTS5 index 'catalog_fts' via SQL execution
-        self._update_fts_index(db_session, file_assets.keys(), classifications)
+        # Step 5: Update FTS5 index 'catalog_fts'
+        self._update_fts_index(db_session)
         stats["fts_index_updated"] = True
 
-        # Step 6: Call TargetPathResolver to populate 'migration_plans'
-        migration_plans = []
-        for asset_id in file_assets.values():
-            # Retrieve asset details from DB (simulated retrieval logic)
-            # In a real app, this would query BinaryAsset table by id
-            binary_asset = self._get_binary_asset(db_session, asset_id)
-            
-            if binary_asset:
-                product = self._get_software_product(db_session, binary_asset.id)
-                taxonomy = self._get_taxonomy(db_session, binary_asset.id)
-                
-                target_path, clean_filename, action = self.path_resolver.process_asset(binary_asset, product, taxonomy)
-                migration_plans.append({
-                    "asset_id": asset_id,
-                    "source_path": file_assets.keys()[list(file_assets.values()).index(asset_id)], # Map back to path for simplicity
-                    "target_path": target_path,
-                    "clean_filename": clean_filename,
-                    "action": action
-                })
-        
-        stats["migration_plans_created"] = len(migration_plans)
+        # Step 6: Generate and persist migration plans
+        proposals = self.path_resolver.generate_migration_plans(db_session)
+        for proposal in proposals:
+            existing_plan = db_session.query(MigrationPlan).filter(
+                MigrationPlan.location_id == proposal.location_id
+            ).first()
+
+            act_str = proposal.action_type.value if hasattr(proposal.action_type, 'value') else str(proposal.action_type)
+
+            if existing_plan:
+                existing_plan.proposed_relative_path = proposal.proposed_relative_path
+                existing_plan.action_type = act_str
+            else:
+                new_plan = MigrationPlan(
+                    location_id=proposal.location_id,
+                    proposed_relative_path=proposal.proposed_relative_path,
+                    action_type=act_str,
+                    status="pending"
+                )
+                db_session.add(new_plan)
+
+        db_session.commit()
+        stats["migration_plans_created"] = len(proposals)
 
         return stats
 
     def _seed_taxonomies(self, db_session: Session):
-        """
-        Seeds default taxonomies into the database.
-        This ensures the system has categories to classify software against.
-        """
-        # Example: Insert a default category if empty
+        """Seed canonical taxonomy hierarchy."""
         try:
-            db_session.execute("""
-                INSERT INTO taxonomies (category_prefix, category_name, subcategory_name)
-                VALUES ('software', 'applications', 'misc')
-                ON CONFLICT DO NOTHING
-            """)
-            db_session.commit()
-        except Exception as e:
-            # Handle potential DB errors gracefully
+            self.taxonomy_service.seed_default_taxonomies(db_session)
+        except Exception:
             pass
 
-    def _update_fts_index(self, db_session: Session, file_paths: Dict[str, int], classifications: List):
-        """
-        Updates the FTS5 index 'catalog_fts' with new binary metadata.
-        """
+    def _link_product_and_taxonomy(
+        self,
+        db_session: Session,
+        asset: Optional[BinaryAsset],
+        classification: LLMClassificationResult,
+        enrichment_source: str
+    ):
+        """Link or create SoftwareProduct and associate to BinaryAsset."""
+        if not asset:
+            return
+
+        # Find or create taxonomy
+        tax = None
+        if classification.primary_category:
+            tax = self.taxonomy_service.resolve_taxonomy(
+                classification.primary_category,
+                classification.subcategory or ""
+            )
+            if tax and not tax.id:
+                db_session.add(tax)
+                db_session.commit()
+
+        # Find or create product
+        product = db_session.query(SoftwareProduct).filter(
+            SoftwareProduct.canonical_vendor == classification.canonical_vendor,
+            SoftwareProduct.canonical_name == classification.canonical_product
+        ).first()
+
+        if not product:
+            product = SoftwareProduct(
+                canonical_vendor=classification.canonical_vendor,
+                canonical_name=classification.canonical_product,
+                taxonomy_id=tax.id if tax else None,
+                summary_description=classification.summary,
+                license_model=classification.license_model,
+                enrichment_source=enrichment_source,
+                confidence_score=classification.confidence_score,
+                is_human_verified=False
+            )
+            db_session.add(product)
+            db_session.flush()
+
+        asset.product_id = product.id
+        db_session.commit()
+
+    def _update_fts_index(self, db_session: Session):
+        """Synchronize FTS5 virtual table with current software_products."""
         try:
-            # Clear existing index for this session to rebuild cleanly (optional optimization)
-            # db_session.execute(f"DROP INDEX {FTS_INDEX_NAME}")
-            
-            # Rebuild index
-            db_session.execute(f"CREATE VIRTUAL TABLE IF NOT EXISTS {FTS_INDEX_NAME} USING fts5(content, content='binary_assets', content_rowid=1)")
-            
-            # Insert data into FTS table
-            for file_path in file_paths:
-                asset_id = file_paths[file_path]
-                # Extract text content from classification or metadata
-                text_content = " ".join([
-                    str(classification.canonical_vendor) if classification else "",
-                    str(classification.canonical_product) if classification else "",
-                    str(file_path)
-                ])
-                
-                db_session.execute(f"""
-                    INSERT INTO {FTS_INDEX_NAME} (content_rowid, content)
-                    VALUES ({asset_id}, :text)
-                """, {"text": text_content})
-            
-            # Create FTS5 virtual table if it doesn't exist and is not already created above
-            # Note: The CREATE statement above handles creation.
+            products = db_session.query(SoftwareProduct).all()
+            for prod in products:
+                # Get a sample filename
+                filename = ""
+                asset = db_session.query(BinaryAsset).filter(BinaryAsset.product_id == prod.id).first()
+                if asset:
+                    filename = asset.pe_original_filename or ""
+
+                db_session.execute(
+                    text("""
+                        INSERT INTO catalog_fts (rowid, canonical_vendor, canonical_name, summary_description, pe_original_filename)
+                        VALUES (:rowid, :vendor, :name, :summary, :filename)
+                    """),
+                    {
+                        "rowid": prod.id,
+                        "vendor": prod.canonical_vendor,
+                        "name": prod.canonical_name,
+                        "summary": prod.summary_description or "",
+                        "filename": filename
+                    }
+                )
             db_session.commit()
-        except Exception as e:
-            print(f"Error updating FTS index: {e}")
-
-    def _get_binary_asset(self, db_session: Session, asset_id: int):
-        """Helper to retrieve a BinaryAsset from the database."""
-        # Assuming a binary_assets table exists with columns matching the schema used in crawler.py
-        try:
-            result = db_session.execute("""
-                SELECT * FROM binary_assets WHERE id = :id
-            """, {"id": asset_id}).first()
-            return result
         except Exception:
-            return None
-
-    def _get_software_product(self, db_session: Session, asset_id: int):
-        """Helper to retrieve a SoftwareProduct linked to an asset."""
-        try:
-            # Assuming software_products table has a foreign key or link to binary_assets
-            result = db_session.execute("""
-                SELECT * FROM software_products WHERE id = :id
-            """, {"id": asset_id}).first()
-            return result
-        except Exception:
-            return None
-
-    def _get_taxonomy(self, db_session: Session, asset_id: int):
-        """Helper to retrieve a Taxonomy linked to an asset."""
-        try:
-            # Assuming taxonomies table has a link or we query the default one
-            result = db_session.execute("""
-                SELECT * FROM taxonomies WHERE id = :id
-            """, {"id": asset_id}).first()
-            return result
-        except Exception:
-            # Return a default taxonomy if not found
-            return None
+            # FTS5 might already have records or virtual table not enabled
+            pass
