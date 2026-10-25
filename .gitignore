@@ -22,3 +22,69 @@ rustc-ice-*.txt
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+
+# Python & Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pycache__/
+.pytest_cache/
+*.py[codz]
+*$py.class
+*.so
+
+# Testing & Coverage
+.coverage
+.coverage.*
+htmlcov/
+.cache
+.qwen
+coverage.xml
+.hypothesis/
+
+# Local databases & logs
+*.db
+*.db-wal
+*.db-shm
+*.db.bak*
+*.bak*
+*.log
+logs/
+*.lock
+reports/
+
+# Local environment variables
+.env
+.envrc
+
+# IDEs and Editors
+.idea/
+.vscode/
+.spyderproject
+.spyproject
+.ropeproject
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Packaging & Distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- RepoScroller Tier Separation ---
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+backend/data/*.bak*
+backend/data/memoryblast_data/
+backend/data/chroma_db/
+frontend/dist/
+frontend/node_modules/
