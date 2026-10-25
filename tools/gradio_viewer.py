@@ -35,7 +35,7 @@ def fetch_migration_plans():
         return pd.DataFrame([{"Error": f"Database read failed: {str(e)}"}])
 
 # Build the Gradio Interface
-with gr.Blocks(title="Migration Plan Viewer", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Migration Plan Viewer") as demo:
     gr.Markdown("# 🗃️ Software Catalog Alchemist - Migration Viewer")
     gr.Markdown("Review the proposed folder restructuring and file operations before execution.")
     
@@ -53,5 +53,10 @@ with gr.Blocks(title="Migration Plan Viewer", theme=gr.themes.Soft()) as demo:
     refresh_btn.click(fn=fetch_migration_plans, outputs=plan_table)
 
 if __name__ == "__main__":
+    import os
     print("Launching Gradio Migration Viewer...")
-    demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
+    port = int(os.environ.get("GRADIO_SERVER_PORT", 7860))
+    try:
+        demo.launch(server_name="127.0.0.1", server_port=port, theme=gr.themes.Soft(), inbrowser=True)
+    except OSError:
+        demo.launch(server_name="127.0.0.1", theme=gr.themes.Soft(), inbrowser=True)

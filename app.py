@@ -110,7 +110,7 @@ def export_json(filename):
         return f"Export failed: {str(e)}", None
 
 # --- Gradio UI Assembly ---
-with gr.Blocks(title="Software Catalog Alchemist", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Software Catalog Alchemist") as demo:
     gr.Markdown("# 🗃️ Software Catalog Alchemist")
     gr.Markdown("Unified dashboard for scanning, reviewing, executing, and exporting your software catalog operations.")
 
@@ -155,4 +155,11 @@ with gr.Blocks(title="Software Catalog Alchemist", theme=gr.themes.Soft()) as de
             export_btn.click(fn=export_json, inputs=[filename_input], outputs=[export_msg, export_file])
 
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
+    import os
+    port = int(os.environ.get("GRADIO_SERVER_PORT", 7860))
+    try:
+        demo.launch(server_name="127.0.0.1", server_port=port, theme=gr.themes.Soft(), inbrowser=True)
+    except OSError:
+        # Fallback to dynamic open port if 7860 is occupied
+        print(f"Port {port} is occupied, launching on next available port...")
+        demo.launch(server_name="127.0.0.1", theme=gr.themes.Soft(), inbrowser=True)
